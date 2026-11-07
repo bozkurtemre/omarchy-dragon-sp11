@@ -1,0 +1,95 @@
+diff --git a/install/hardware/microsoft/surface-pro-11.sh b/install/hardware/microsoft/surface-pro-11.sh
+index 8f2b454..b80993c 100644
+--- a/install/hardware/microsoft/surface-pro-11.sh
++++ b/install/hardware/microsoft/surface-pro-11.sh
+@@ -1,25 +1,33 @@
+-# Microsoft Surface Pro 11 (Snapdragon X Elite, OLED) board-specific setup.
++# Microsoft Surface Pro 11 (Snapdragon X Elite OLED and X Plus LCD) board-specific setup.
+ 
+ mkinitcpio_dir=${OMARCHY_SURFACE_PRO11_MKINITCPIO_DIR:-/etc/mkinitcpio.conf.d}
+ uki_config=${OMARCHY_SURFACE_PRO11_UKI_CONFIG:-/etc/kernel/uki.conf}
+ dtb_root=${OMARCHY_QUALCOMM_DTB_ROOT:-/boot/dtbs}
+ 
+-# Only the X Elite OLED model has been tested. The LCD and X Plus models share
+-# the DMI product name but use other device trees and panels.
+-if omarchy-hw-aarch64-qualcomm && omarchy-hw-match-device-tree microsoft,denali-oled; then
+-  echo "Detected Microsoft Surface Pro 11, applying board-specific support..."
++# The OLED (X Elite) and LCD (X Plus) models share the DMI product name and
++# every node but the panel in x1-microsoft-denali.dtsi; each has its own tree.
++if omarchy-hw-aarch64-qualcomm &&
++  { omarchy-hw-match-device-tree microsoft,denali-oled || omarchy-hw-match-device-tree microsoft,denali-lcd; }; then
++  if omarchy-hw-match-device-tree microsoft,denali-lcd; then
++    surface_pro11_dtb_name=x1p64100-microsoft-denali.dtb
++    echo "Detected Microsoft Surface Pro 11 (LCD), applying board-specific support..."
++  else
++    surface_pro11_dtb_name=x1e80100-microsoft-denali-oled.dtb
++    echo "Detected Microsoft Surface Pro 11 (OLED), applying board-specific support..."
++  fi
+ 
+   # Installs made before the Intel Surface fixes were limited to x86 carry
+   # their keyboard module file. It sorts after this script's drop-in and
+   # resets MODULES to Intel modules, leaving no panel or keyboard to unlock with.
+   rm -f "$mkinitcpio_dir/surface_device_modules.conf"
+ 
+-  # Embed the OLED model's device tree instead of the list dtb-uki.sh writes.
+-  # systemd-stub picks from that list by SMBIOS identity, which the OLED, LCD
+-  # and X Plus models share. Omarchy's kernel carries the tree, found the way
+-  # dtb-uki.sh finds it; without it the list stays and an earlier pin goes.
++  # Embed this model's device tree instead of the list dtb-uki.sh writes.
++  # systemd-stub picks from that list by SMBIOS identity, which the OLED and
++  # LCD models share (its hwids name the OLED tree for both). Omarchy's kernel
++  # carries the tree, found the way dtb-uki.sh finds it; without it the list
++  # stays and an earlier pin goes.
+   surface_pro11_dtb=""
+-  for dtb in "$dtb_root"/linux-omarchy*/qcom/x1e80100-microsoft-denali-oled.dtb; do
++  for dtb in "$dtb_root"/linux-omarchy*/qcom/"$surface_pro11_dtb_name"; do
+     if [[ -f $dtb ]]; then
+       surface_pro11_dtb=$dtb
+       break
+@@ -64,14 +72,15 @@ if omarchy-hw-aarch64-qualcomm && omarchy-hw-match-device-tree microsoft,denali-
+ 
+   # Bring up the panel and the Flex Keyboard before disk unlock. The display
+   # driver waits for the USB-C DisplayPort chain, so that loads early too,
+-  # with the IPC router and PD mapper pmic_glink needs to initialize. As in
++  # with the IPC router and PD mapper pmic_glink needs to initialize. The OLED
++  # panel has its own driver, the LCD is a generic eDP panel. As in
+   # qualcomm/initramfs.sh, the ? skips a module a kernel does not have, so its
+   # image still builds.
+   # The DSP driver stays out: listing it here would bypass the USB-root guard.
+   mkdir -p "$mkinitcpio_dir"
+   cat >"$mkinitcpio_dir/surface-pro-11-initramfs.conf" <<'CONF'
+ MODULES+=(msm? dispcc_x1e80100? gpucc_x1e80100? videocc_sm8550? phy_qcom_edp?
+-  panel_samsung_atna33xc20? phy_qcom_qmp_combo? ps883x? qrtr? qcom_pd_mapper? pmic_glink?
++  panel_samsung_atna33xc20? panel_edp? phy_qcom_qmp_combo? ps883x? qrtr? qcom_pd_mapper? pmic_glink?
+   pmic_glink_altmode? i2c_qcom_geni? surface_aggregator? surface_aggregator_registry?
+   surface_aggregator_hub? surface_hid_core? surface_hid?)
+ 
+diff --git a/test/shell.d/surface-pro-11-hardware-test.sh b/test/shell.d/surface-pro-11-hardware-test.sh
+index d1a178a..3febfa5 100755
+--- a/test/shell.d/surface-pro-11-hardware-test.sh
++++ b/test/shell.d/surface-pro-11-hardware-test.sh
+@@ -158,6 +158,18 @@ run_setup "$renamed" >/dev/null
+ grep -Fxq "DeviceTree=$renamed/dtbs/linux-omarchy-aarch64/qcom/x1e80100-microsoft-denali-oled.dtb" "$renamed/kernel/uki.conf" ||
+   fail "the device tree is found under any linux-omarchy package directory, as dtb-uki.sh finds it"
+ 
++lcd="$scratch/lcd"
++surface_pro11 "$lcd"
++printf 'microsoft,denali-lcd\0microsoft,denali\0qcom,x1p64100\0qcom,x1e80100\0' >"$lcd/proc/device-tree/compatible"
++: >"$lcd/dtbs/linux-omarchy/qcom/x1p64100-microsoft-denali.dtb"
++run_setup "$lcd" >/dev/null
++grep -Fxq "DeviceTree=$lcd/dtbs/linux-omarchy/qcom/x1p64100-microsoft-denali.dtb" "$lcd/kernel/uki.conf" ||
++  fail "the LCD model embeds its own device tree, not the OLED model's"
++grep -q 'panel_edp?' "$lcd/mkinitcpio.conf.d/surface-pro-11-initramfs.conf" ||
++  fail "the LCD model's generic eDP panel driver loads before disk unlock"
++[[ $(head -n1 "$lcd/packages.log") == 'add surface-pro-11-support iptsd surface-pro-11-sensors' ]] ||
++  fail "the LCD model gets the same hardware support packages"
++
+ for model in 'microsoft,denali\0qcom,x1p64100' 'lenovo,yoga-slim7x\0qcom,x1e80100'; do
+   other="$scratch/other"
+   rm -rf "$other"
+@@ -168,4 +180,4 @@ for model in 'microsoft,denali\0qcom,x1p64100' 'lenovo,yoga-slim7x\0qcom,x1e8010
+     fail "untested Denali variants and other boards are left unchanged"
+ done
+ 
+-pass "Surface Pro 11 setup configures only the tested OLED model"
++pass "Surface Pro 11 setup configures the OLED and LCD models, each with its own device tree"

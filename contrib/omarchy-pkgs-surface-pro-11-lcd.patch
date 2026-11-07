@@ -1,0 +1,209 @@
+diff --git a/pkgbuilds/microsoft-surface-pro-11-sensors/PKGBUILD b/pkgbuilds/microsoft-surface-pro-11-sensors/PKGBUILD
+index c5dfa511..a67ae1df 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-sensors/PKGBUILD
++++ b/pkgbuilds/microsoft-surface-pro-11-sensors/PKGBUILD
+@@ -4,8 +4,8 @@
+ 
+ pkgname=microsoft-surface-pro-11-sensors
+ pkgver=1
+-pkgrel=1
+-pkgdesc="Ambient light sensor service for the Microsoft Surface Pro 11 (Snapdragon X Elite)"
++pkgrel=2
++pkgdesc="Ambient light sensor service for the Microsoft Surface Pro 11 (Snapdragon X Elite and X Plus)"
+ arch=('aarch64')
+ # Qualcomm-only: the pacman platform guard keeps it off other hardware.
+ groups=('omarchy-platform-qualcomm')
+diff --git a/pkgbuilds/microsoft-surface-pro-11-sensors/README.package.md b/pkgbuilds/microsoft-surface-pro-11-sensors/README.package.md
+index cb02c504..8439853a 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-sensors/README.package.md
++++ b/pkgbuilds/microsoft-surface-pro-11-sensors/README.package.md
+@@ -11,7 +11,7 @@ TCS3430 -> sensor core on the ADSP <- hexagonrpcd (serves config and registry)
+ 
+ - `hexagonrpcd` and `libhexagonrpc` from `linux-msm/hexagonrpc`, pinned, with a patch that lets the daemon write the registry the DSP generates.
+ - `libssc` from `DylanVanAssche/libssc`, pinned, with a patch that reads illuminance from Microsoft's `color` sensor, because the standard `ambient_light` sensor reports zero on this model. It is installed privately under `/usr/lib/surface-pro-11-sensors/` and used only by iio-sensor-proxy, through a drop-in.
+-- `surface-pro-11-sensors.service`, which runs hexagonrpcd sandboxed against `/var/lib/surface-pro-11-sensors/root`. It starts when the ADSP's FastRPC device appears, so a missing or failed DSP never holds up boot, and it runs only on the `microsoft,denali-oled` device tree.
++- `surface-pro-11-sensors.service`, which runs hexagonrpcd sandboxed against `/var/lib/surface-pro-11-sensors/root`. It starts when the ADSP's FastRPC device appears, so a missing or failed DSP never holds up boot, and it runs only on the `microsoft,denali` device tree.
+ - A sleep hook that stops iio-sensor-proxy across suspend: an open light stream otherwise wakes the SoC shortly into every deep suspend.
+ - `surface-pro-11-sensors-extract`.
+ 
+diff --git a/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-extract b/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-extract
+index b8fe0626..90ade4df 100755
+--- a/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-extract
++++ b/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-extract
+@@ -42,9 +42,9 @@ while (($#)); do
+   esac
+ done
+ 
+-# The qualified configuration is for the X Elite OLED model; the LCD and X
+-# Plus models share its DMI name but not its sensors.
+-if ! { [[ -r $COMPATIBLE ]] && tr '\0' '\n' <"$COMPATIBLE" | grep -qx 'microsoft,denali-oled'; }; then
++# The qualified configuration was taken from the X Elite OLED model; the X Plus
++# LCD model ships the same files (identical hashes in its driver store).
++if ! { [[ -r $COMPATIBLE ]] && tr '\0' '\n' <"$COMPATIBLE" | grep -qx 'microsoft,denali'; }; then
+   log "not a Surface Pro 11 OLED; nothing to do"
+   exit 0
+ fi
+diff --git a/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-sleep b/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-sleep
+index 6c145d0d..998d9770 100755
+--- a/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-sleep
++++ b/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors-sleep
+@@ -9,7 +9,7 @@ compatible=${SP11_SENSORS_COMPATIBLE:-/proc/device-tree/compatible}
+ unit=iio-sensor-proxy.service
+ flag=${SP11_SENSORS_SLEEP_FLAG:-/run/surface-pro-11-sensors-sleep.stopped}
+ 
+-[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali-oled' || exit 0
++[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali' || exit 0
+ 
+ case ${1:-} in
+   pre)
+diff --git a/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors.service b/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors.service
+index 2588a5d8..dbcd8307 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors.service
++++ b/pkgbuilds/microsoft-surface-pro-11-sensors/surface-pro-11-sensors.service
+@@ -1,7 +1,7 @@
+ [Unit]
+ Description=Surface Pro 11 Qualcomm sensor service
+ Documentation=file:///usr/share/doc/microsoft-surface-pro-11-sensors/README.package.md
+-ConditionFirmware=device-tree-compatible(microsoft,denali-oled)
++ConditionFirmware=device-tree-compatible(microsoft,denali)
+ BindsTo=dev-fastrpc\x2dadsp.device
+ After=systemd-modules-load.service dev-fastrpc\x2dadsp.device
+ Before=iio-sensor-proxy.service
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/PKGBUILD b/pkgbuilds/microsoft-surface-pro-11-support/PKGBUILD
+index c5a7a3b4..c3aa3ad3 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-support/PKGBUILD
++++ b/pkgbuilds/microsoft-surface-pro-11-support/PKGBUILD
+@@ -5,8 +5,8 @@
+ 
+ pkgname=microsoft-surface-pro-11-support
+ pkgver=1
+-pkgrel=7
+-pkgdesc="Hardware support for the Microsoft Surface Pro 11 (Snapdragon X Elite) not yet carried upstream"
++pkgrel=8
++pkgdesc="Hardware support for the Microsoft Surface Pro 11 (Snapdragon X Elite and X Plus) not yet carried upstream"
+ arch=('aarch64')
+ # Qualcomm-only: the pacman platform guard keeps it off other hardware.
+ groups=('omarchy-platform-qualcomm')
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/README.package.md b/pkgbuilds/microsoft-surface-pro-11-support/README.package.md
+index 53119419..e7963f36 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-support/README.package.md
++++ b/pkgbuilds/microsoft-surface-pro-11-support/README.package.md
+@@ -1,6 +1,6 @@
+ # microsoft-surface-pro-11-support
+ 
+-Hardware support for the Microsoft Surface Pro 11 with Snapdragon X Elite and OLED display (`microsoft,denali-oled`) that no upstream package carries yet. Omarchy's Surface Pro 11 hardware setup (`install/hardware/microsoft/surface-pro-11.sh`) installs it with the `linux-sp11` kernel.
++Hardware support for the Microsoft Surface Pro 11 with Snapdragon X Elite and OLED display (`microsoft,denali`) that no upstream package carries yet. Omarchy's Surface Pro 11 hardware setup (`install/hardware/microsoft/surface-pro-11.sh`) installs it with the `linux-sp11` kernel.
+ 
+ The package contains no Microsoft or Qualcomm DSP firmware; `qcom-firmware-extract` copies that from the machine's own Windows installation.
+ 
+@@ -23,7 +23,7 @@ The package contains no Microsoft or Qualcomm DSP firmware; `qcom-firmware-extra
+ - **Lid**: with the cover open, the lid line shows a false edge just after the SoC powers down in suspend, which wakes the machine at once. A sleep hook arms lid wake only when the machine suspends with the cover closed, so opening the cover still wakes it; the power button wakes it either way.
+ - **Pen and touch**: the touch controller resets its firmware on resume, and a running iptsd never recovers. A sleep hook stops iptsd before suspend and starts it again after.
+ 
+-Every service and sleep hook checks for the `microsoft,denali-oled` device tree and does nothing elsewhere.
++Every service and sleep hook checks for the `microsoft,denali` device tree and does nothing elsewhere.
+ 
+ ## Retirement
+ 
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-charge-limit-sleep b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-charge-limit-sleep
+index a7aff36a..de8a66f3 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-charge-limit-sleep
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-charge-limit-sleep
+@@ -14,7 +14,7 @@ battery=${SP11_CHARGE_LIMIT_SYSFS:-/sys/class/power_supply/qcom-battmgr-bat}
+ start_path=$battery/charge_control_start_threshold
+ end_path=$battery/charge_control_end_threshold
+ 
+-[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali-oled' || exit 0
++[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali' || exit 0
+ [[ -w $start_path && -w $end_path ]] || exit 0
+ 
+ start=$(<"$start_path")
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair
+index d8a88276..56dee1d1 100755
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair
+@@ -22,7 +22,7 @@ address_file=${SP11_FLEX_ADDRESS_FILE:-/var/lib/surface-pro-11-support/flex-keyb
+ run_dir=${SP11_FLEX_RUN_DIR:-/run/surface-pro-11-support}
+ marker=$run_dir/flex-needs-repair
+ 
+-[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali-oled' || exit 0
++[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali' || exit 0
+ mkdir -p "$run_dir"
+ 
+ # Waits are skipped in the package tests.
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair.service b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair.service
+index d7905e21..102512d0 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair.service
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-autopair.service
+@@ -1,6 +1,6 @@
+ [Unit]
+ Description=Pair the Surface Flex Keyboard over Bluetooth when it is attached
+-ConditionFirmware=device-tree-compatible(microsoft,denali-oled)
++ConditionFirmware=device-tree-compatible(microsoft,denali)
+ After=bluetooth.service
+ Wants=bluetooth.service
+ 
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect
+index ec196681..7bc503b5 100755
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect
+@@ -17,7 +17,7 @@ address_file=${SP11_FLEX_ADDRESS_FILE:-/var/lib/surface-pro-11-support/flex-keyb
+ run_dir=${SP11_FLEX_RUN_DIR:-/run/surface-pro-11-support}
+ marker=$run_dir/flex-needs-repair
+ 
+-[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali-oled' || exit 0
++[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali' || exit 0
+ mkdir -p "$run_dir"
+ 
+ # Waits are skipped in the package tests.
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect.service b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect.service
+index 391145ee..0b4b8463 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect.service
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-flex-reconnect.service
+@@ -1,6 +1,6 @@
+ [Unit]
+ Description=Reconnect the Surface Flex Keyboard over Bluetooth when it is detached
+-ConditionFirmware=device-tree-compatible(microsoft,denali-oled)
++ConditionFirmware=device-tree-compatible(microsoft,denali)
+ After=bluetooth.service
+ Wants=bluetooth.service
+ 
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-iptsd-sleep b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-iptsd-sleep
+index b055ba99..df3d8b33 100755
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-iptsd-sleep
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-iptsd-sleep
+@@ -7,7 +7,7 @@
+ compatible=${SP11_IPTSD_COMPATIBLE:-/proc/device-tree/compatible}
+ state=${SP11_IPTSD_STATE:-/run/surface-pro-11-iptsd.units}
+ 
+-[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali-oled' || exit 0
++[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali' || exit 0
+ 
+ case ${1:-} in
+   pre)
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-lid-wake-sleep b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-lid-wake-sleep
+index a848b48c..715aa273 100755
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-lid-wake-sleep
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-lid-wake-sleep
+@@ -13,7 +13,7 @@
+ compatible=${SP11_LID_WAKE_COMPATIBLE:-/proc/device-tree/compatible}
+ wakeup=${SP11_LID_WAKE_SYSFS:-/sys/devices/platform/gpio-keys/power/wakeup}
+ 
+-[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali-oled' || exit 0
++[[ -r $compatible ]] && tr '\0' '\n' <"$compatible" | grep -qx 'microsoft,denali' || exit 0
+ [[ -w $wakeup ]] || exit 0
+ 
+ # Unknown lid state counts as open: a missed wake is better than a wake loop.
+diff --git a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-touchpad-mode-sleep b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-touchpad-mode-sleep
+index eab7d048..0bdaba94 100644
+--- a/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-touchpad-mode-sleep
++++ b/pkgbuilds/microsoft-surface-pro-11-support/surface-pro-11-touchpad-mode-sleep
+@@ -74,7 +74,7 @@ def check(dev):
+ 
+ def on_surface_pro_11():
+     try:
+-        return 'microsoft,denali-oled' in open(COMPATIBLE, 'rb').read().decode(errors='replace').split('\0')
++        return 'microsoft,denali' in open(COMPATIBLE, 'rb').read().decode(errors='replace').split('\0')
+     except OSError:
+         return False
+ 

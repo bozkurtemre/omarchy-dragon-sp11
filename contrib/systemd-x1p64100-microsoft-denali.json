@@ -1,0 +1,10 @@
+{
+    "type": "devicetree",
+    "name": "Microsoft Corporation Surface",
+    "compatible": "microsoft,denali-lcd",
+    "hwids": [
+        "2245edda-fd9b-5703-a77a-39a91bf64878",
+        "5003998f-4753-59a4-85d4-e62b9c30a421",
+        "2a0f2d6c-3aa0-5386-9d6e-0ddbfa0eeb94"
+    ]
+}
