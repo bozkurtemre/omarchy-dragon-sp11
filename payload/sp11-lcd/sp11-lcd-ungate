@@ -1,0 +1,27 @@
+#!/bin/bash
+# Let Omarchy's Surface Pro 11 packages act on the LCD model.
+#
+# microsoft-surface-pro-11-support and -sensors check for the OLED model's
+# device tree, microsoft,denali-oled, in their scripts and in their units'
+# ConditionFirmware=. The LCD model shares every node those files touch
+# (x1-microsoft-denali.dtsi), so this replaces the check with the shared
+# compatible, microsoft,denali, which both models carry. Installed as
+# /usr/local/lib/sp11-lcd/sp11-lcd-ungate and run by the pacman hook
+# /etc/pacman.d/hooks/90-sp11-lcd-ungate.hook after every install or update
+# of those packages. Once upstream makes the same change, there is nothing
+# left to replace and this does nothing.
+set -uo pipefail
+
+changed=0
+for file in $(pacman -Qlq microsoft-surface-pro-11-support microsoft-surface-pro-11-sensors 2>/dev/null); do
+  [[ -f $file ]] || continue
+  grep -q 'microsoft,denali-oled' "$file" || continue
+  if sed -i 's/microsoft,denali-oled/microsoft,denali/g' "$file"; then
+    echo "sp11-lcd: ungated $file"
+    changed=$((changed + 1))
+  fi
+done
+if ((changed)) && [[ -d /run/systemd/system ]]; then
+  systemctl daemon-reload
+fi
+exit 0

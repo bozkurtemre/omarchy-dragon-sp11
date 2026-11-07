@@ -10,10 +10,15 @@
 #  1. Pins the LCD device tree in the UKI and keeps it pinned on every rebuild.
 #  2. Loads panel, display and keyboard drivers in the initramfs, so the disk
 #     unlock prompt is visible and the Surface keyboard types into it.
-#  3. Installs this machine's signed DSP/GPU firmware with Omarchy's
-#     qcom-firmware-extract and enables the DSP driver once nothing is missing.
-#  4. Gives Wi-Fi the board data its unprogrammed WCN7850 finds nowhere else.
-#  5. Rebuilds the boot image and checks the UKI that will actually boot.
+#  3. Installs Omarchy's Surface Pro 11 packages (sound, touch and pen, light
+#     sensor, Bluetooth address, DSP/GPU firmware) from the USB's copy of the
+#     edge repository's signed packages, lets them act on the LCD model, and
+#     hooks their updates from edge into omarchy-update (sp11-lcd-update).
+#  4. Installs this machine's signed DSP/GPU firmware with Omarchy's
+#     qcom-firmware-extract where the packages left any missing, and enables
+#     the DSP driver once nothing is missing.
+#  5. Gives Wi-Fi the board data its unprogrammed WCN7850 finds nowhere else.
+#  6. Rebuilds the boot image and checks the UKI that will actually boot.
 set -euo pipefail
 
 payload=${1:?usage: apply.sh PAYLOAD_DIR [--force]}
@@ -29,7 +34,8 @@ step() { echo; echo "==> $*"; }
 ((EUID == 0)) || die "run as root"
 [[ $(uname -m) == aarch64 ]] || die "not an aarch64 system"
 [[ -d /usr/share/omarchy ]] || die "no Omarchy installation in this root"
-for f in sp11-lcd-devicetree zz-sp11-lcd.conf uki-dtb.py extract-ath12k-board.py apply.sh; do
+for f in sp11-lcd-devicetree zz-sp11-lcd.conf uki-dtb.py extract-ath12k-board.py apply.sh \
+  sp11-lcd-ungate 90-sp11-lcd-ungate.hook sp11-lcd-update sp11-lcd-post-update; do
   [[ -f $payload/$f ]] || die "$payload/$f is missing"
 done
 
@@ -60,7 +66,8 @@ fi
 step "Installing the device tree pin"
 install -d -m 755 "$lib" "$(dirname "$hook")"
 install -m 755 "$payload/sp11-lcd-devicetree" "$payload/apply.sh" "$payload/uki-dtb.py" \
-  "$payload/extract-ath12k-board.py" "$lib/"
+  "$payload/extract-ath12k-board.py" "$payload/sp11-lcd-ungate" "$payload/sp11-lcd-update" \
+  "$payload/sp11-lcd-post-update" "$lib/"
 install -m 644 "$payload/zz-sp11-lcd.conf" "$lib/"
 ln -sfn "$lib/sp11-lcd-devicetree" "$hook"
 "$lib/sp11-lcd-devicetree"
@@ -72,6 +79,52 @@ echo "DeviceTree=$pinned"
 step "Adding panel, display and keyboard drivers to the initramfs"
 install -m 644 "$payload/zz-sp11-lcd.conf" /etc/mkinitcpio.conf.d/zz-sp11-lcd.conf
 echo "/etc/mkinitcpio.conf.d/zz-sp11-lcd.conf"
+
+step "Installing Omarchy's Surface Pro 11 packages"
+# The pacman hook first, so the packages come out of the transaction already
+# acting on the LCD model. The stable channel does not carry these packages,
+# so omarchy-update's post-update hook brings them up to edge's versions
+# (sp11-lcd-update): per user, and in skel for a user created at first boot
+# (deferred provisioning).
+install -Dm644 "$payload/90-sp11-lcd-ungate.hook" /etc/pacman.d/hooks/90-sp11-lcd-ungate.hook
+for home in /etc/skel /home/*; do
+  [[ -d $home ]] || continue
+  install -Dm755 "$lib/sp11-lcd-post-update" "$home/.config/omarchy/hooks/post-update.d/sp11-lcd"
+  if [[ $home != /etc/skel ]]; then
+    chown -R "$(stat -c %u:%g "$home")" "$home/.config/omarchy" 2>/dev/null || true
+  fi
+done
+# The USB's copy: Omarchy's signed packages and their dependencies, resolved
+# against this release's image at ISO build time (build/fetch-packages.sh).
+# Only what is not installed yet: a rerun must not downgrade what
+# sp11-lcd-update brought in since, and a rerun from /usr/local/lib/sp11-lcd
+# has no pkgs/ at all.
+pkgs=()
+for pkg in "$payload"/pkgs/*.pkg.tar.*; do
+  [[ -f $pkg && $pkg != *.sig ]] || continue
+  name=$(pacman -Qpq "$pkg" 2>/dev/null) || die "$pkg is not a package pacman can read"
+  pacman -Q "$name" >/dev/null 2>&1 || pkgs+=("$pkg")
+done
+if ((${#pkgs[@]})); then
+  pacman -U --noconfirm "${pkgs[@]}"
+fi
+for name in microsoft-surface-pro-11-firmware microsoft-surface-pro-11-support \
+  microsoft-surface-pro-11-sensors microsoft-surface-snapdragon-addresses iptsd pipewire-libcamera; do
+  pacman -Q "$name" >/dev/null 2>&1 || die "$name is not installed and not on the USB (sp11-lcd/pkgs); rebuild the ISO with build-iso.ps1"
+done
+"$lib/sp11-lcd-ungate"
+left=$(pacman -Qlq microsoft-surface-pro-11-support microsoft-surface-pro-11-sensors | xargs grep -ls 'microsoft,denali-oled' || true)
+[[ -z $left ]] || die "still gated on the OLED model: $left"
+# Omarchy's own Surface Pro 11 setup enables the sensor service; the Flex
+# Keyboard units are started by udev, and iptsd by its own udev rule.
+systemctl enable surface-pro-11-sensors.service
+if [[ -d $payload/sensors ]]; then
+  # The light sensor's configuration, from this machine's Windows driver store
+  # (staged by build-iso.ps1). Needs the running device tree to be a Denali.
+  surface-pro-11-sensors-extract -d "$payload/sensors" || warn "sensor configuration not extracted; auto brightness stays off until 'sudo surface-pro-11-sensors-extract' is run with Windows readable"
+else
+  warn "no sensors/ on the USB; auto brightness needs 'sudo surface-pro-11-sensors-extract' with Windows readable"
+fi
 
 step "Installing DSP and GPU firmware"
 command -v qcom-firmware-extract >/dev/null || die "qcom-firmware-extract is not installed (Omarchy installs it on Snapdragon machines)"

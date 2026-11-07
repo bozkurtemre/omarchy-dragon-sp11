@@ -77,10 +77,27 @@ if ($missing) { throw "not in the Windows driver store: $($missing -join ', ')" 
 Get-ChildItem (Join-Path $stage 'firmware') -Recurse -File |
   ForEach-Object { '  {0}  {1}' -f (Get-FileHash $_.FullName).Hash.Substring(0, 16).ToLower(), $_.FullName.Substring($stage.Length + 1) }
 
+# The light sensor's configuration package, whole: surface-pro-11-sensors-extract
+# picks the files it needs and checks them against the hashes it qualified.
+$sensors = Get-ChildItem $store -Directory -Filter 'surfacepro_snscfgcrd8380.inf_arm64_*'
+if (-not $sensors) { throw 'surfacepro_snscfgcrd8380 (sensor configuration) is not in the Windows driver store' }
+foreach ($package in $sensors) {
+  Copy-Item $package.FullName (Join-Path $stage "sensors\$($package.Name)") -Recurse
+  '  sensors\{0} ({1} files)' -f $package.Name, (Get-ChildItem $package.FullName -File).Count
+}
+
 Write-Host "==> Building the toolbox image"
 docker build -q -t sp11-remaster (Join-Path $repo 'build') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'docker build failed (is Docker Desktop running?)' }
 docker volume create sp11work | Out-Null
+
+Write-Host "==> Fetching Omarchy's Surface Pro 11 packages for the USB"
+$pkgs = Join-Path $stage 'pkgs'
+New-Item -ItemType Directory -Force $pkgs | Out-Null
+docker run --rm --privileged --env "OMARCHY_VERSION=$Version" `
+  -v "${dl}:/in:ro" -v "${pkgs}:/out" -v "$(Join-Path $repo 'build'):/build:ro" -v sp11work:/work `
+  sp11-remaster bash /build/fetch-packages.sh
+if ($LASTEXITCODE -ne 0) { throw 'package fetch failed' }
 
 Write-Host "==> Remastering"
 docker run --rm --env "OMARCHY_VERSION=$Version" `

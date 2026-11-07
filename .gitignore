@@ -9,3 +9,8 @@
 *.mbn
 *.elf
 firmware/
+
+# Staged by build-iso.ps1 next to the scripts: official packages and this machine's
+# Windows sensor configuration. They go on the ISO, never into git.
+pkgs/
+sensors/

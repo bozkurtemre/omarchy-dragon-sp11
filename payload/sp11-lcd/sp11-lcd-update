@@ -1,0 +1,64 @@
+#!/bin/bash
+# Update Omarchy's Surface Pro 11 packages from its edge repository.
+#
+# The installed system stays on the stable channel, which does not carry these
+# packages, and pacman cannot list edge beside stable (a repository's database
+# is named after its section, and Omarchy serves only omarchy.db). So this
+# reads edge's database, and for each of the packages installs the newer
+# version with pacman -U by URL, which fetches the signature and verifies it
+# with the Omarchy key like any repository package. Dependencies resolve from
+# the stable repositories as usual.
+#
+# Installed as /usr/local/lib/sp11-lcd/sp11-lcd-update. Omarchy's post-update
+# hook (~/.config/omarchy/hooks/post-update.d/sp11-lcd) runs it after every
+# omarchy-update; it can be run by hand any time.
+#   sp11-lcd-update          install what is newer
+#   sp11-lcd-update --check  only report, exit 0 when nothing is newer
+set -uo pipefail
+
+packages=(
+  microsoft-surface-pro-11-firmware
+  microsoft-surface-pro-11-support
+  microsoft-surface-pro-11-sensors
+  microsoft-surface-snapdragon-addresses
+  iptsd
+)
+repo=${SP11_LCD_EDGE_REPO:-https://pkgs.omarchy.org/edge/aarch64}
+check=0
+[[ ${1:-} == --check ]] && check=1
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if ! curl -fsSL --max-time 60 -o "$tmp/omarchy.db" "$repo/omarchy.db"; then
+  echo "sp11-lcd-update: cannot fetch $repo/omarchy.db; nothing changed" >&2
+  exit 2
+fi
+mkdir -p "$tmp/db" && tar -xf "$tmp/omarchy.db" -C "$tmp/db" 2>/dev/null
+
+urls=()
+for name in "${packages[@]}"; do
+  desc=$(ls -d "$tmp/db/$name"-[0-9]*/desc 2>/dev/null | head -1)
+  if [[ -z $desc ]]; then
+    echo "sp11-lcd-update: $name is no longer on edge; left as installed" >&2
+    continue
+  fi
+  available=$(awk '/^%VERSION%/ { getline; print; exit }' "$desc")
+  filename=$(awk '/^%FILENAME%/ { getline; print; exit }' "$desc")
+  installed=$(pacman -Q "$name" 2>/dev/null | cut -d' ' -f2)
+  if [[ -z $installed ]]; then
+    echo "sp11-lcd-update: $name is not installed; skipped" >&2
+    continue
+  fi
+  if (( $(vercmp "$available" "$installed") > 0 )); then
+    echo "$name: $installed -> $available"
+    urls+=("$repo/$filename")
+  fi
+done
+
+if ((${#urls[@]} == 0)); then
+  echo "sp11-lcd-update: the Surface Pro 11 packages are current"
+  exit 0
+fi
+((check)) && exit 1
+((EUID == 0)) || { echo "sp11-lcd-update: run as root to install" >&2; exit 1; }
+pacman -U --noconfirm --needed "${urls[@]}"

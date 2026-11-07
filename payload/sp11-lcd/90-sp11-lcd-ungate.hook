@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = microsoft-surface-pro-11-support
+Target = microsoft-surface-pro-11-sensors
+
+[Action]
+Description = Letting the Surface Pro 11 packages act on the LCD model...
+When = PostTransaction
+Exec = /usr/local/lib/sp11-lcd/sp11-lcd-ungate

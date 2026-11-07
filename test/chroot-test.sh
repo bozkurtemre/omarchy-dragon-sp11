@@ -103,6 +103,44 @@ for f in Denali/qcadsp8380.mbn Denali/adsp_dtb.mbn Denali/qccdsp8380.mbn Denali/
 done
 grep -qs 'qcdxkmsuc8380' $R/etc/mkinitcpio.conf.d/qcom-firmware.conf && pass "zap shader listed for the initramfs" || fail "zap shader not listed for the initramfs"
 
+# --- 3b. Omarchy's Surface Pro 11 packages from the USB, offline ---------------------
+if compgen -G "$P/pkgs/*.pkg.tar.*" >/dev/null; then
+  cp $P/90-sp11-lcd-ungate.hook $R/etc/pacman.d/hooks/ 2>/dev/null || { mkdir -p $R/etc/pacman.d/hooks && cp $P/90-sp11-lcd-ungate.hook $R/etc/pacman.d/hooks/; }
+  mkdir -p $R/usr/local/lib/sp11-lcd && cp $P/sp11-lcd-ungate $P/sp11-lcd-update $R/usr/local/lib/sp11-lcd/
+  # The installer populates the target's keyrings before any of this runs.
+  chroot $R sh -c 'pacman-key --init && pacman-key --populate archlinuxarm omarchy' >keyring.log 2>&1 || fail "pacman-key (see $W/keyring.log)"
+  mapfile -t pkgs < <(find $R/tmp/payload/pkgs -name '*.pkg.tar.*' ! -name '*.sig' | sed "s|^$R||" | sort)
+  chroot $R pacman -U --noconfirm --needed "${pkgs[@]}" >pacman-u.log 2>&1 && pass "pacman -U installs ${#pkgs[@]} packages offline, signatures verified" || { fail "pacman -U (see $W/pacman-u.log)"; tail -5 pacman-u.log; }
+  for p in microsoft-surface-pro-11-firmware microsoft-surface-pro-11-support microsoft-surface-pro-11-sensors microsoft-surface-snapdragon-addresses iptsd pipewire-libcamera; do
+    chroot $R pacman -Qq $p >/dev/null 2>&1 && pass "installed $p" || fail "not installed: $p"
+  done
+  left=$(chroot $R sh -c 'pacman -Qlq microsoft-surface-pro-11-support microsoft-surface-pro-11-sensors | xargs grep -ls microsoft,denali-oled' || true)
+  [[ -z $left ]] && pass "pacman hook ungated every OLED check" || fail "still gated: $left"
+  grep -rq 'device-tree-compatible(microsoft,denali)' $R/usr/lib/systemd/system/surface-pro-11-sensors.service && pass "sensor unit conditions on microsoft,denali" || fail "sensor unit condition"
+  chroot $R systemctl enable surface-pro-11-sensors.service >/dev/null 2>&1 && pass "sensor service enabled" || fail "sensor service enable"
+  [[ -f $R/usr/lib/udev/rules.d/50-iptsd.rules ]] && pass "iptsd udev rule present" || fail "iptsd udev rule missing"
+  ls $R/usr/lib/firmware/ath12k/WCN7850/hw2.0/board.bin* >/dev/null 2>&1 && pass "package supplies Wi-Fi board.bin" || fail "package board.bin missing"
+  ls $R/usr/lib/firmware/qcom/x1e80100/X1E80100-Microsoft-Surface-Pro-11-tplg.bin* >/dev/null 2>&1 && pass "audio topology present" || fail "audio topology missing"
+  [[ -e $R/usr/share/alsa/ucm2/conf.d/x1e80100/X1E80100-Microsoft-Surface-Pro-11.conf ]] && pass "UCM profile linked for the shared card name" || fail "UCM link missing"
+  # The LCD device tree's compatible stands in for /proc/device-tree's, and
+  # the driver store's own soc files for /sys/devices/soc0.
+  mkdir -p $R/tmp/soc0 && for f in $R/tmp/payload/sensors/*/{soc_id,revision,platform_subtype,platform_subtype_id,platform_version,hw_platform}; do [[ -f $f ]] && tr -d '\r\n' <"$f" >$R/tmp/soc0/$(basename $f); done
+  chroot $R env SP11_SENSORS_COMPATIBLE=/tmp/dt/compatible SP11_SENSORS_SOC=/tmp/soc0 surface-pro-11-sensors-extract -d /tmp/payload/sensors >sensors.log 2>&1 &&
+    [[ -f $R/var/lib/surface-pro-11-sensors/root/sensors/config/json.lst ]] && pass "sensor configuration extracted from the staged driver store" || { fail "sensor extract (see $W/sensors.log)"; tail -3 sensors.log; }
+  missing=$(chroot $R env QCOM_FW_DT_ROOT=/tmp/dt qcom-firmware-extract --list-missing 2>&1)
+  [[ -z $missing ]] && pass "package firmware satisfies the device tree" || fail "firmware missing with packages: $missing"
+  # The updater against the live edge repository: what the USB carries must be current.
+  cp -L /etc/resolv.conf $R/etc/resolv.conf
+  chroot $R /usr/local/lib/sp11-lcd/sp11-lcd-update --check >update.log 2>&1
+  case $? in
+    0) pass "sp11-lcd-update: the fetched packages match edge" ;;
+    1) fail "sp11-lcd-update finds newer packages on edge (refetch): $(cat update.log)" ;;
+    *) echo "NOTE: edge repository not reachable; updater not checked" ;;
+  esac
+else
+  echo "NOTE: no pkgs/ staged; skipping the package tests"
+fi
+
 # --- 4. Wi-Fi board data, with the record and checksum apply.sh uses -------------
 record=$(sed -n "s/^board_record='\(.*\)'$/\1/p" $P/apply.sh)
 sum=$(grep -o -- '--expected-sha256 [0-9a-f]*' $P/apply.sh | cut -d' ' -f2)

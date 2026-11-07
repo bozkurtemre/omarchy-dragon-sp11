@@ -46,25 +46,18 @@ come from and (2) the `denali-oled` string in 11 files.
   one-month-behind mirror. The manual says edge is for people who can recover a broken system. The
   OLED gate still needs the local fix below.
 
-### B. Stay on stable, take only the five packages from edge (recommended)
-Add the edge repository **after** `[core]`/`[extra]`/`[alarm]` in `/etc/pacman.conf`:
+### B. Stay on stable, take only the five packages from edge (recommended, implemented)
+A second repository section cannot do it: pacman names a repository's database after its section
+(`[omarchy-edge]` asks for `omarchy-edge.db`) and Omarchy serves only `omarchy.db`, so edge cannot
+sit beside stable in `pacman.conf` (tried; 404). Instead, `sp11-lcd-update` reads edge's `omarchy.db`,
+compares the five packages' versions with what is installed, and installs newer ones with
+`pacman -U <url>`, which fetches the `.sig` and verifies it with the Omarchy key like any repository
+package; dependencies resolve from the stable repositories. Omarchy's `post-update` hook
+(`~/.config/omarchy/hooks/post-update.d/`) runs it after every `omarchy-update`, under the sudo
+authorization the update keeps alive. Kernel, Hyprland, Omarchy runtime and all libraries stay stable.
 
-```ini
-[omarchy-edge]
-Server = https://pkgs.omarchy.org/edge/$arch
-```
-
-pacman takes a package from the first repository that has it, so with the entry last, edge supplies
-only what nothing else has: exactly the five packages (and `ath12k-board-fallback`,
-`linux-firmware-qcom`, which we don't need). Kernel, Hyprland, Omarchy runtime and all libraries stay
-stable. The packages are signed with the same Omarchy key the stable repo uses.
-
-- Persistence: `omarchy-channel-set` and `omarchy-refresh-pacman` rewrite `/etc/pacman.conf` from
-  templates, but run `omarchy-hook pre-refresh-pacman` first, "so custom repositories … shape the
-  transaction". A hook in `~/.config/omarchy/hooks/pre-refresh-pacman` that re-appends the entry
-  keeps it across channel changes. Routine `omarchy-update` does not rewrite `pacman.conf`.
 - Risk: if edge rebuilds one of the five against a library soname stable does not have yet, pacman
-  refuses the update with a visible dependency error until the stable mirror catches up (at most a
+  refuses that update with a visible dependency error until the stable mirror catches up (at most a
   month). Today the versions match (`fmt` 12.2.0, `spdlog` 1.17.0 on both mirrors).
 - Offline install: the live USB has no Wi-Fi (no board data, DSP off), so `finish-install.sh` cannot
   download. The ISO build can pre-fetch the five packages, their missing dependencies and all
@@ -97,14 +90,17 @@ and units, then `systemctl daemon-reload`. It survives package updates and goes 
 upstream makes the change (nothing left to replace).
 
 ## What B changes in `apply.sh`
-1. Append `[omarchy-edge]` (or point pacman at the USB's package cache when offline).
-2. Install `microsoft-surface-pro-11-firmware`, `-support` (pulls `-snapdragon-addresses`), `iptsd`,
-   `-sensors`, `pipewire-libcamera`. The firmware package replaces the driver-store copies
-   (`qcom-firmware-extract --retire` does that itself); the package's `board.bin` replaces ours.
-3. `surface-pro-11-sensors-extract -d <staged driver store>`; `systemctl enable surface-pro-11-sensors`
-   and the Flex Keyboard units.
-4. Install the gate hook and the `pre-refresh-pacman` hook.
-5. Keep the driver-store firmware path as the offline fallback.
+1. `pacman -U` the USB's copy of `microsoft-surface-pro-11-firmware`, `-support` (pulls
+   `-snapdragon-addresses`), `iptsd`, `-sensors`, `pipewire-libcamera` and their missing dependencies,
+   fetched at ISO build time by pacman inside the official target image (`build/fetch-packages.sh`).
+   The firmware package replaces the driver-store copies (`qcom-firmware-extract --retire` does that
+   itself); the package's `board.bin` replaces ours.
+2. The gate hook (`90-sp11-lcd-ungate.hook`) is in place before the transaction, so the packages come
+   out of it acting on `microsoft,denali`.
+3. `surface-pro-11-sensors-extract -d <staged driver store>`; `systemctl enable surface-pro-11-sensors`.
+   The Flex Keyboard units are started by udev, iptsd by its own udev rule.
+4. `sp11-lcd-update` and its `post-update` hook for every user and `/etc/skel`.
+5. The driver-store firmware path stays as the fallback for what the packages leave missing.
 
 ## Still unknowable before a hardware test
 Pen pressure/tilt through iptsd, whether the LCD's speakers want the same ceilings (same tuning ID

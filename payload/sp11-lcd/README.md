@@ -29,9 +29,14 @@ sudo bash <usb>/sp11-lcd/apply.sh <usb>/sp11-lcd
   (`/etc/mkinitcpio.conf.d/zz-sp11-lcd.conf`), so the disk unlock prompt is visible and the keyboard works.
 - Installs this device's signed ADSP/CDSP/GPU firmware, taken from its Windows driver store, with
   Omarchy's `qcom-firmware-extract`, and enables the DSP driver once nothing is missing.
+- Installs Omarchy's Surface Pro 11 packages from `pkgs/` (sound with speaker protection, touch and
+  pen, light sensor, Bluetooth address, firmware), makes them act on the LCD model, extracts the light
+  sensor's configuration from `sensors/`, and hooks their updates into `omarchy-update`
+  (`sp11-lcd-update`, which can also be run by hand).
 - Installs the Wi-Fi board data the Surface's WCN7850 finds nowhere else (Qualcomm's reference
   record, as Omarchy's Surface Pro 11 package does).
 - Rebuilds the boot image and verifies that the UKI that will boot really uses the LCD tree.
 
-The scripts are copied to `/usr/local/lib/sp11-lcd/`. Rerun them any time (without the firmware step) with
-`sudo /usr/local/lib/sp11-lcd/apply.sh /usr/local/lib/sp11-lcd`.
+The scripts are copied to `/usr/local/lib/sp11-lcd/`. Rerun them any time with
+`sudo /usr/local/lib/sp11-lcd/apply.sh /usr/local/lib/sp11-lcd` (packages, firmware and sensor
+configuration stay as they are; everything else is reapplied).

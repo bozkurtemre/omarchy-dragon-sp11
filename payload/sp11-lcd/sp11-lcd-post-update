@@ -1,0 +1,6 @@
+#!/bin/bash
+# Omarchy hook: omarchy-update runs it as the user after the package update.
+# Installed as ~/.config/omarchy/hooks/post-update.d/sp11-lcd for every user,
+# and in /etc/skel for users created later. Brings the Surface Pro 11 packages,
+# which the stable channel does not carry, up to edge's versions.
+sudo /usr/local/lib/sp11-lcd/sp11-lcd-update
