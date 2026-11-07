@@ -6,12 +6,15 @@
                                 tree's file name and first compatible
   uki-dtb.py check UKI COMPAT   exit 0 only if the UKI carries exactly one
                                 .dtb, its first compatible is COMPAT, and it
-                                has no .dtbauto/.hwids section that
-                                systemd-stub would prefer over it
+                                has no .dtbauto section that systemd-stub
+                                would prefer over it
 
 systemd-stub matches device trees on the first compatible string only
 (src/boot/devicetree.c), and a matching .dtbauto wins over .dtb
 (src/boot/stub.c), so those are the properties that decide what boots.
+A .hwids section alone is harmless: the stub consults it only to choose
+among .dtbauto (and .efifw) sections, and ukify >= 262 adds one to every
+UKI it builds.
 """
 import struct
 import sys
@@ -85,9 +88,8 @@ def check(uki: Path, compat: str) -> int:
         problems.append("no .linux section (not a UKI)")
     if dtbs != [compat]:
         problems.append(f".dtb sections carry {dtbs or 'nothing'}, expected exactly [{compat!r}]")
-    for unwanted in (".dtbauto", ".hwids"):
-        if unwanted in names:
-            problems.append(f"has {names.count(unwanted)} {unwanted} section(s); systemd-stub may pick another tree")
+    if ".dtbauto" in names:
+        problems.append(f"has {names.count('.dtbauto')} .dtbauto section(s); systemd-stub may pick another tree")
     for problem in problems:
         print(f"{uki}: {problem}", file=sys.stderr)
     if not problems:

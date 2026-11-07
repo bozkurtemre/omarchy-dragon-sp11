@@ -13,8 +13,9 @@ The official, signed ISO gets exactly two additions:
 
 The kernel, packages and installer are Omarchy's own. Nothing is rebuilt and no foreign packages are added.
 
-> **Status:** the ISO builds and is verified automatically in the container. It has not been
-> installed on real hardware yet; results will be added here.
+> **Status:** the ISO builds and passes its automatic checks, and the `sp11-lcd` fix passes every check
+> inside the official ISO's target root image (`test/`). It has not been installed on real hardware
+> yet; results will be added here.
 
 ## Why is this needed?
 
@@ -106,6 +107,11 @@ on a Surface: the Surface UEFI drops custom EFI boot entries.
   validated on the OLED unit (`3378`). `board-2.bin` has entries for `1107` only with board-id 44
   and 82. Report it if `dmesg` shows an `ath12k ... board data` error. The OLED record is
   deliberately not applied.
+- **Bluetooth:** the WCN7850 stays an unconfigured controller until it is given its public address,
+  and Wi-Fi gets a different placeholder MAC on every boot. Omarchy's small
+  `microsoft-surface-snapdragon-addresses` package fixes both from the `MacAddressEmulationAddress`
+  UEFI variable. It is tested on the Surface Pro 11 and not tied to the OLED model, but it is edge-only
+  for now, so it is the first candidate to add.
 - **Sound, pen/touch (iptsd), light sensor, Flex keyboard pairing:** Omarchy provides these through
   `microsoft-surface-pro-11-support`, `iptsd` and `microsoft-surface-pro-11-sensors`. For now those
   packages are only on the **edge** channel, and their services run only on `microsoft,denali-oled`.
@@ -126,6 +132,7 @@ on a Surface: the Surface UEFI drops custom EFI boot entries.
 | `payload/sp11-lcd/sp11-lcd-devicetree` | `/etc/boot/hooks/pre.d/90-…`: pins the LCD tree in `uki.conf` before every UKI build |
 | `payload/sp11-lcd/zz-sp11-lcd.conf` | initramfs modules (only those the kernel has, without `?`) |
 | `tools/sp11-chid.ps1` | Computes this device's systemd CHIDs and shows which tree would be picked |
+| `test/chroot-test.ps1`, `test/chroot-test.sh` | Run after `build-iso.ps1`: applies the staged fix inside the official target root image (copy-on-write) and checks the tree pin, the initramfs built for the target kernel, firmware installation against the LCD device tree, and the resulting UKI |
 
 ## Upstream candidates
 - **systemd:** `x1p64100-microsoft-denali.json` (`microsoft,denali-lcd`). The EDID panel CHIDs

@@ -65,7 +65,7 @@ fi
 mkdir -p "$target"
 mount -o subvolid=5 "$root" "$target"
 fstab=""
-for candidate in "$target/@/etc/fstab" "$target/etc/fstab"; do
+for candidate in "$target/@/etc/fstab" "$target"/*/etc/fstab "$target/etc/fstab"; do
   [[ -f $candidate ]] && { fstab=$candidate; break; }
 done
 [[ -n $fstab ]] || die "no etc/fstab on $root"

@@ -74,7 +74,9 @@ echo "/etc/mkinitcpio.conf.d/zz-sp11-lcd.conf"
 step "Installing DSP and GPU firmware"
 command -v qcom-firmware-extract >/dev/null || die "qcom-firmware-extract is not installed (Omarchy installs it on Snapdragon machines)"
 if [[ -d $payload/firmware ]]; then
-  qcom-firmware-extract --install --no-rebuild -d "$payload/firmware"
+  # Missing firmware must not stop the device tree and initramfs fixes, which
+  # are what the next boot depends on; --list-missing below decides the DSP.
+  qcom-firmware-extract --install --no-rebuild -d "$payload/firmware" || warn "qcom-firmware-extract reported a problem (see above)"
 else
   warn "no firmware/ in $payload; using whatever is already installed"
 fi

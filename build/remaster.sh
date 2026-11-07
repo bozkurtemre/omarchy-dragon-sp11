@@ -99,6 +99,7 @@ xorriso -indev "$iso" -outdev "$out" \
   -map live-sp11-lcd.efi "$uki_path" \
   -map /payload/sp11-lcd /sp11-lcd \
   -boot_image any replay \
+  -boot_image any gpt_disk_guid=volume_date_uuid \
   -commit 2>&1 | grep -vE '^(xorriso : (NOTE|UPDATE)|libisofs: NOTE|Drive current|Media current|Media status|Media summary|Volume id|Boot record|Writing to|Added to ISO image|Written to medium|xorriso : WARNING : -volume_date uuid)' || true
 
 step "Verifying the result"
@@ -109,8 +110,10 @@ xorriso -osirrox on -indev "$out" -extract "$uki_path" check.efi -extract /sp11-
 cmp -s check.efi live-sp11-lcd.efi || die "the ISO does not carry the rebuilt UKI"
 cmp -s check.sh /payload/sp11-lcd/finish-install.sh || die "the ISO does not carry /sp11-lcd"
 report() { xorriso -indev "$1" -report_el_torito plain -report_system_area plain 2>/dev/null | grep -vE '^(Drive|Media|Boot record|Volume id|xorriso)'; }
-# Boot records keep their kind and order; only block addresses may move.
-diff <(report "$iso" | sed -E 's/[0-9]+/N/g') <(report "$out" | sed -E 's/[0-9]+/N/g') >/dev/null ||
+# Boot records keep their kind and order and the GPT GUIDs (derived from the
+# volume date) stay the same; only block addresses and sizes may move.
+normalize() { sed -E '/GUID/!s/[0-9]+/N/g'; }
+diff <(report "$iso" | normalize) <(report "$out" | normalize) ||
   die "El Torito / partition table layout differs from the official ISO"
 echo "UUID $uuid, volume dates, boot records and partition layout match the official ISO"
 

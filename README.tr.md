@@ -14,8 +14,9 @@ Resmi, imzalı ISO'ya yalnızca iki şey eklenir:
 Çekirdek, paketler ve kurulum programı Omarchy'nin kendisidir. Hiçbir şey yeniden
 derlenmez ve yabancı paket eklenmez.
 
-> **Durum:** ISO derleniyor ve konteynerde otomatik doğrulanıyor. Gerçek cihazda kurulum
-> testi henüz yapılmadı; sonuçlar bu dosyaya eklenecek.
+> **Durum:** ISO derleniyor ve otomatik kontrollerden geçiyor. `sp11-lcd` düzeltmesi de resmi ISO'nun
+> hedef kök imajında bütün kontrolleri geçiyor (`test/`). Gerçek cihazda kurulum henüz yapılmadı;
+> sonuçlar bu dosyaya eklenecek.
 
 ## Neden gerekli?
 
@@ -108,6 +109,11 @@ Windows'u tuttuysanız Limine'e eklemek için `sudo limine-scan` kullanın. Surf
   doğruladığı kayıttan (`3378`) farklı. `board-2.bin` içinde `1107` için yalnızca board-id 44 ve 82
   var. `dmesg` çıktısında `ath12k ... board data` hatası görürseniz bildirin. OLED kaydı bilerek
   uygulanmadı.
+- **Bluetooth:** WCN7850, kendisine açık (public) adresi verilene kadar yapılandırılmamış kalıyor.
+  Wi-Fi de her açılışta farklı bir geçici MAC alıyor. Omarchy'nin küçük
+  `microsoft-surface-snapdragon-addresses` paketi, `MacAddressEmulationAddress` UEFI değişkenini
+  kullanarak ikisini de düzeltiyor. Paket Surface Pro 11'de test edilmiş ve OLED'e bağlı değil, ama
+  şimdilik yalnızca edge'de. Eklenecekler listesinde ilk aday bu.
 - **Ses, kalem/dokunmatik (iptsd), ışık sensörü, Flex klavye eşleştirme:** Omarchy bunları
   `microsoft-surface-pro-11-support`, `iptsd` ve `microsoft-surface-pro-11-sensors` paketleriyle
   veriyor. Bu paketler şimdilik yalnızca **edge** kanalında ve servisleri yalnızca
@@ -129,6 +135,7 @@ Windows'u tuttuysanız Limine'e eklemek için `sudo limine-scan` kullanın. Surf
 | `payload/sp11-lcd/sp11-lcd-devicetree` | `/etc/boot/hooks/pre.d/90-…`: her UKI derlemesinden önce `uki.conf` dosyasında LCD tree'sini sabitler |
 | `payload/sp11-lcd/zz-sp11-lcd.conf` | initramfs modülleri (yalnızca çekirdekte bulunanlar, `?` kullanmadan) |
 | `tools/sp11-chid.ps1` | Bu cihazın systemd CHID'lerini hesaplar ve hangi tree'nin seçileceğini gösterir |
+| `test/chroot-test.ps1`, `test/chroot-test.sh` | `build-iso.ps1`'den sonra çalıştırılır. Hazırlanan düzeltmeyi resmi hedef kök imajında (copy-on-write) uygular. Tree sabitlemesini, hedef çekirdek için üretilen initramfs'i, LCD device tree'sine göre firmware kurulumunu ve ortaya çıkan UKI'yi kontrol eder |
 
 ## Upstream'e gönderilebilecekler
 - **systemd:** `x1p64100-microsoft-denali.json` (`microsoft,denali-lcd`). EDID panel CHID'leri
