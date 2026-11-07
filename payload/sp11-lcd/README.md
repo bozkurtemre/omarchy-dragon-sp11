@@ -1,35 +1,35 @@
-# sp11-lcd: Surface Pro 11 LCD (Snapdragon X Plus) kurulum sonrası düzeltme
+# sp11-lcd: post-install fix for the Surface Pro 11 LCD (Snapdragon X Plus)
 
-Bu klasör USB'nin kökünde (`/sp11-lcd`) durur. Omarchy kurulumu bittikten sonra,
-**yeniden başlatmadan önce** bir kez çalıştırılır.
+This folder sits at the root of the USB stick (`/sp11-lcd`). Run it once after the Omarchy
+installer finishes, **before rebooting**.
 
-1. Kurulum programı "bitti" ekranını gösterince yeniden başlatma.
-2. `Ctrl+Alt+F2` → giriş: `root` (parola yok).
-3. Çalıştır:
+1. When the installer shows its "done" screen, don't reboot.
+2. Press `Ctrl+Alt+F2` and log in as `root` (no password).
+3. Run:
 
    ```
    bash /run/archiso/bootmnt/sp11-lcd/finish-install.sh
    ```
 
-4. Disk şifreleme parolasını sor(ar)sa gir. Sonunda `It is safe to reboot.` yazmalı.
-5. `reboot` yaz, ekran kararınca USB'yi çıkar.
+4. Enter the disk encryption password if asked. It must end with `It is safe to reboot.`
+5. Type `reboot` and pull the USB stick once the screen goes black.
 
-Zaten yeniden başlattıysan ve kurulu sistem açıldıysa, USB'yi takıp onun içinden:
+If you already rebooted and the installed system came up, plug the stick in and run from it:
 
 ```
 sudo bash <usb>/sp11-lcd/apply.sh <usb>/sp11-lcd
 ```
 
-## Ne yapar
+## What it does
 
-- UKI'de LCD device tree'sini (`x1p64100-microsoft-denali.dtb`) sabitler ve her
-  çekirdek/UKI yenilemesinde sabit tutar (`/etc/boot/hooks/pre.d/90-sp11-lcd-devicetree`).
-  Aksi halde systemd-stub her Surface Pro 11'e OLED tree'sini yükler.
-- Panel, ekran ve Surface klavye sürücülerini initramfs'e ekler
-  (`/etc/mkinitcpio.conf.d/zz-sp11-lcd.conf`); disk kilidi ekranı görünür ve klavye çalışır.
-- Bu cihazın Windows sürücü deposundan alınmış imzalı ADSP/CDSP/GPU firmware'ini
-  Omarchy'nin `qcom-firmware-extract` aracıyla kurar, eksik kalmazsa DSP sürücüsünü açar.
-- Boot imajını yeniden üretir ve açılacak UKI'nin gerçekten LCD tree'siyle açılacağını doğrular.
+- Pins the LCD device tree (`x1p64100-microsoft-denali.dtb`) in the UKI and keeps it pinned on every
+  kernel/UKI rebuild (`/etc/boot/hooks/pre.d/90-sp11-lcd-devicetree`). Otherwise systemd-stub loads
+  the OLED tree on every Surface Pro 11.
+- Adds the panel, display and Surface keyboard drivers to the initramfs
+  (`/etc/mkinitcpio.conf.d/zz-sp11-lcd.conf`), so the disk unlock prompt is visible and the keyboard works.
+- Installs this device's signed ADSP/CDSP/GPU firmware, taken from its Windows driver store, with
+  Omarchy's `qcom-firmware-extract`, and enables the DSP driver once nothing is missing.
+- Rebuilds the boot image and verifies that the UKI that will boot really uses the LCD tree.
 
-Betikler `/usr/local/lib/sp11-lcd/` altına kopyalanır; istediğinde
-`sudo /usr/local/lib/sp11-lcd/apply.sh /usr/local/lib/sp11-lcd` ile (firmware hariç) tekrar çalıştırılabilir.
+The scripts are copied to `/usr/local/lib/sp11-lcd/`. Rerun them any time (without the firmware step) with
+`sudo /usr/local/lib/sp11-lcd/apply.sh /usr/local/lib/sp11-lcd`.
