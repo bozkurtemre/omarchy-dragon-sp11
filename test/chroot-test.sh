@@ -18,6 +18,9 @@ failures=0
 fail() { echo "FAIL: $*"; failures=$((failures + 1)); }
 pass() { echo "PASS: $*"; }
 
+bash /test/fstab-test.sh $P/finish-install.sh | grep -vE '^failures'
+((PIPESTATUS[0] == 0)) || failures=$((failures + 1))
+
 mkdir -p $W && cd $W
 if [[ ! -f root.img ]]; then
   xorriso -osirrox on -indev "$iso" -extract /arch/aarch64/omarchy-root.img.zst root.img.zst >/dev/null 2>&1
@@ -100,10 +103,23 @@ for f in Denali/qcadsp8380.mbn Denali/adsp_dtb.mbn Denali/qccdsp8380.mbn Denali/
 done
 grep -qs 'qcdxkmsuc8380' $R/etc/mkinitcpio.conf.d/qcom-firmware.conf && pass "zap shader listed for the initramfs" || fail "zap shader not listed for the initramfs"
 
-# --- 4. the UKI the pinned uki.conf produces ---------------------------------------
-chroot $R ukify build --config=/etc/kernel/uki.conf --linux="/usr/lib/modules/$KVER/vmlinuz" \
-  --initrd=/tmp/initramfs.img --output=/tmp/test.efi >ukify.log 2>&1 || fail "ukify build (see $W/ukify.log)"
-python3 /build/uki-dtb.py check $R/tmp/test.efi microsoft,denali-lcd && pass "UKI from the pinned uki.conf boots microsoft,denali-lcd" || fail "UKI check"
+# --- 4. Wi-Fi board data, with the record and checksum apply.sh uses -------------
+record=$(sed -n "s/^board_record='\(.*\)'$/\1/p" $P/apply.sh)
+sum=$(grep -o -- '--expected-sha256 [0-9a-f]*' $P/apply.sh | cut -d' ' -f2)
+bytes=$(grep -o -- '--expected-bytes [0-9]*' $P/apply.sh | cut -d' ' -f2)
+chroot $R python3 /tmp/payload/extract-ath12k-board.py --expected-bytes "$bytes" --expected-sha256 "$sum" \
+  /usr/lib/firmware/ath12k/WCN7850/hw2.0/board-2.bin "$record" /tmp/board.bin >board.log 2>&1 &&
+  pass "Wi-Fi board record extracts from the target's board-2.bin ($bytes bytes, sha256 ${sum:0:12})" || fail "Wi-Fi board record (see $W/board.log)"
+strings -n 20 $R/usr/lib/firmware/ath12k/WCN7850/hw2.0/board-2.bin | grep -q 'subsystem-device=1107,qmi-chip-id=2,qmi-board-id=255' &&
+  echo "NOTE: board-2.bin now has an exact 1107/255 entry; board.bin is no longer needed" ||
+  pass "board-2.bin has no 1107/255 entry, so ath12k falls back to board.bin"
+
+# --- 5. the UKI the pinned uki.conf produces ---------------------------------------
+# limine-mkinitcpio builds it this way (limine-mkinitcpio-install, build_uki):
+# mkinitcpio --kernel --cmdline --uki, which calls ukify without --config.
+chroot $R mkinitcpio --kernel "$KVER" --cmdline /etc/kernel/cmdline --uki /tmp/real.efi -S autodetect >uki.log 2>&1 ||
+  fail "mkinitcpio --uki (see $W/uki.log)"
+python3 /build/uki-dtb.py check $R/tmp/real.efi microsoft,denali-lcd && pass "UKI built like limine-mkinitcpio boots microsoft,denali-lcd" || fail "UKI check"
 
 echo
 echo "failures: $failures"

@@ -10,84 +10,102 @@
 # On an already booted install, run apply.sh instead (see README.md).
 set -euo pipefail
 
-here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 die() { echo "sp11-lcd: ERROR: $*" >&2; exit 1; }
 
-((EUID == 0)) || die "run as root"
-if [[ ! -d /run/archiso ]]; then
-  die "this is not the live USB; on the installed system run: sudo bash $here/apply.sh $here"
-fi
-
-target=/mnt/sp11-lcd
-mapper=""
-opened=0
-cleanup() {
-  set +e
-  rm -rf "$target/var/tmp/sp11-lcd" 2>/dev/null
-  if mountpoint -q "$target"; then
-    umount -R "$target"
-  fi
-  if ((opened)); then
-    cryptsetup close "$mapper"
-  fi
+# The root subvolume named in an fstab ("@" as the Omarchy ISO writes it,
+# "/@" as genfstab does); empty when / is not a btrfs subvolume.
+root_subvol() {
+  awk '!/^[[:space:]]*#/ && $2 == "/" {
+    n = split($4, o, ",")
+    for (i = 1; i <= n; i++) if (o[i] ~ /^subvol=/) { sub(/^subvol=/, "", o[i]); print o[i] }
+  }' "$1"
 }
-trap cleanup EXIT
 
-# The install target is on an internal disk, never on the boot medium.
-boot_disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE /run/archiso/bootmnt)" 2>/dev/null | head -1)
-mapfile -t luks < <(lsblk -rpno NAME,FSTYPE,PKNAME | awk -v b="/dev/$boot_disk" '$2 == "crypto_LUKS" && $3 != b { print $1 }')
+# Every fstab entry but / and swap, with noauto and x-systemd.* options
+# dropped, so automount entries such as an ESP get mounted too.
+fstab_without_root() {
+  awk '!/^[[:space:]]*(#|$)/ && $2 != "/" && $3 != "swap" {
+    n = split($4, o, ","); opts = ""
+    for (i = 1; i <= n; i++) if (o[i] != "noauto" && o[i] !~ /^x-systemd\./) opts = opts (opts ? "," : "") o[i]
+    $4 = opts ? opts : "defaults"; print
+  }' "$1"
+}
 
-if ((${#luks[@]} > 1)); then
-  echo "Several encrypted partitions found:"
-  select dev in "${luks[@]}"; do [[ -n $dev ]] && break; done
-  luks=("$dev")
-fi
+main() {
+  local here dev root fstab subvol rest
+  # Global, not local: the EXIT trap runs after main has returned.
+  target=/mnt/sp11-lcd mapper="" opened=0
+  here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  ((EUID == 0)) || die "run as root"
+  [[ -d /run/archiso ]] || die "this is not the live USB; on the installed system run: sudo bash $here/apply.sh $here"
 
-if ((${#luks[@]} == 1)); then
-  dev=${luks[0]}
-  # Reuse a mapping the installer left open.
-  mapper=$(lsblk -rno NAME,TYPE "$dev" | awk '$2 == "crypt" { print $1; exit }')
-  if [[ -z $mapper ]]; then
-    mapper=sp11root
-    echo "Unlocking $dev (the disk encryption password you chose in the installer)"
-    cryptsetup open "$dev" "$mapper"
-    opened=1
+  # shellcheck disable=SC2317 # called through the trap
+  cleanup() {
+    set +e
+    rm -rf "$target/var/tmp/sp11-lcd" 2>/dev/null
+    mountpoint -q "$target" && umount -R "$target"
+    ((opened)) && cryptsetup close "$mapper"
+  }
+  trap cleanup EXIT
+
+  # The install target is on an internal disk, never on the boot medium.
+  local boot_disk luks btrfs
+  boot_disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE /run/archiso/bootmnt)" 2>/dev/null | head -1)
+  mapfile -t luks < <(lsblk -rpno NAME,FSTYPE,PKNAME | awk -v b="/dev/$boot_disk" '$2 == "crypto_LUKS" && $3 != b { print $1 }')
+  if ((${#luks[@]} > 1)); then
+    echo "Several encrypted partitions found:"
+    select dev in "${luks[@]}"; do [[ -n $dev ]] && break; done
+    luks=("$dev")
   fi
-  root=/dev/mapper/$mapper
-else
-  mapfile -t btrfs < <(lsblk -rpno NAME,FSTYPE,PKNAME | awk -v b="/dev/$boot_disk" '$2 == "btrfs" && $3 != b { print $1 }')
-  ((${#btrfs[@]} == 1)) || die "cannot find the installed system (no single LUKS or btrfs partition on an internal disk)"
-  root=${btrfs[0]}
-fi
 
-# Read the root subvolume from the install's own fstab, then mount the rest
-# (including whichever EFI partition the install uses) the same way.
-mkdir -p "$target"
-mount -o subvolid=5 "$root" "$target"
-fstab=""
-for candidate in "$target/@/etc/fstab" "$target"/*/etc/fstab "$target/etc/fstab"; do
-  [[ -f $candidate ]] && { fstab=$candidate; break; }
-done
-[[ -n $fstab ]] || die "no etc/fstab on $root"
-subvol=$(awk '$2 == "/" { n = split($4, o, ","); for (i = 1; i <= n; i++) if (o[i] ~ /^subvol=/) { sub(/^subvol=/, "", o[i]); print o[i] } }' "$fstab")
-umount "$target"
-if [[ -n $subvol ]]; then
-  mount -o "subvol=$subvol" "$root" "$target"
-else
-  mount "$root" "$target"
-fi
-# Everything but / and swap, including noauto/automount entries such as an ESP.
-fstab_rest=$(mktemp)
-awk '!/^[[:space:]]*(#|$)/ && $2 != "/" && $3 != "swap" {
-  n = split($4, o, ","); opts = ""
-  for (i = 1; i <= n; i++) if (o[i] != "noauto" && o[i] !~ /^x-systemd\./) opts = opts (opts ? "," : "") o[i]
-  $4 = opts ? opts : "defaults"; print }' "$target/etc/fstab" >"$fstab_rest"
-mount --all --fstab "$fstab_rest" --target-prefix "$target"
-rm -f "$fstab_rest"
-findmnt -R "$target" -no TARGET,SOURCE,FSTYPE
+  if ((${#luks[@]} == 1)); then
+    dev=${luks[0]}
+    # Reuse a mapping the installer left open; else open it under the name
+    # the install's own crypttab uses.
+    mapper=$(lsblk -rno NAME,TYPE "$dev" | awk '$2 == "crypt" { print $1; exit }')
+    if [[ -z $mapper ]]; then
+      mapper=omarchy_root
+      echo "Unlocking $dev (the disk encryption password you chose in the installer)"
+      cryptsetup open "$dev" "$mapper"
+      opened=1
+    fi
+    root=/dev/mapper/$mapper
+  else
+    mapfile -t btrfs < <(lsblk -rpno NAME,FSTYPE,PKNAME | awk -v b="/dev/$boot_disk" '$2 == "btrfs" && $3 != b { print $1 }')
+    ((${#btrfs[@]} == 1)) || die "cannot find the installed system (no single LUKS or btrfs partition on an internal disk)"
+    root=${btrfs[0]}
+  fi
 
-rm -rf "$target/var/tmp/sp11-lcd"
-cp -r "$here" "$target/var/tmp/sp11-lcd"
-arch-chroot "$target" bash /var/tmp/sp11-lcd/apply.sh /var/tmp/sp11-lcd "$@"
-echo
-echo "sp11-lcd: Type 'reboot'. Pull the USB once the screen goes black, so the Surface starts the installed system."
+  # Read the root subvolume from the install's own fstab, then mount the rest
+  # (including whichever EFI partition the install uses) the same way.
+  mkdir -p "$target"
+  mount -o subvolid=5 "$root" "$target"
+  fstab=""
+  for candidate in "$target/@/etc/fstab" "$target"/*/etc/fstab "$target/etc/fstab"; do
+    [[ -f $candidate ]] && { fstab=$candidate; break; }
+  done
+  [[ -n $fstab ]] || die "no etc/fstab on $root"
+  subvol=$(root_subvol "$fstab")
+  umount "$target"
+  if [[ -n $subvol ]]; then
+    mount -o "subvol=$subvol" "$root" "$target"
+  else
+    mount "$root" "$target"
+  fi
+  rest=$(mktemp)
+  fstab_without_root "$target/etc/fstab" >"$rest"
+  mount --all --fstab "$rest" --target-prefix "$target"
+  rm -f "$rest"
+  findmnt -R "$target" -no TARGET,SOURCE,FSTYPE
+
+  rm -rf "$target/var/tmp/sp11-lcd"
+  cp -r "$here" "$target/var/tmp/sp11-lcd"
+  arch-chroot "$target" bash /var/tmp/sp11-lcd/apply.sh /var/tmp/sp11-lcd "$@"
+  echo
+  echo "sp11-lcd: Type 'reboot'. Pull the USB once the screen goes black, so the Surface starts the installed system."
+}
+
+# Sourced by test/fstab-test.sh for the helpers above; run otherwise.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi

@@ -12,7 +12,8 @@
 #     unlock prompt is visible and the Surface keyboard types into it.
 #  3. Installs this machine's signed DSP/GPU firmware with Omarchy's
 #     qcom-firmware-extract and enables the DSP driver once nothing is missing.
-#  4. Rebuilds the boot image and checks the UKI that will actually boot.
+#  4. Gives Wi-Fi the board data its unprogrammed WCN7850 finds nowhere else.
+#  5. Rebuilds the boot image and checks the UKI that will actually boot.
 set -euo pipefail
 
 payload=${1:?usage: apply.sh PAYLOAD_DIR [--force]}
@@ -28,7 +29,7 @@ step() { echo; echo "==> $*"; }
 ((EUID == 0)) || die "run as root"
 [[ $(uname -m) == aarch64 ]] || die "not an aarch64 system"
 [[ -d /usr/share/omarchy ]] || die "no Omarchy installation in this root"
-for f in sp11-lcd-devicetree zz-sp11-lcd.conf uki-dtb.py apply.sh; do
+for f in sp11-lcd-devicetree zz-sp11-lcd.conf uki-dtb.py extract-ath12k-board.py apply.sh; do
   [[ -f $payload/$f ]] || die "$payload/$f is missing"
 done
 
@@ -58,7 +59,8 @@ fi
 
 step "Installing the device tree pin"
 install -d -m 755 "$lib" "$(dirname "$hook")"
-install -m 755 "$payload/sp11-lcd-devicetree" "$payload/apply.sh" "$payload/uki-dtb.py" "$lib/"
+install -m 755 "$payload/sp11-lcd-devicetree" "$payload/apply.sh" "$payload/uki-dtb.py" \
+  "$payload/extract-ath12k-board.py" "$lib/"
 install -m 644 "$payload/zz-sp11-lcd.conf" "$lib/"
 ln -sfn "$lib/sp11-lcd-devicetree" "$hook"
 "$lib/sp11-lcd-devicetree"
@@ -92,6 +94,36 @@ else
   echo "All device-tree firmware present"
 fi
 
+step "Wi-Fi board data"
+# The Surface's WCN7850 reports generic identifiers (subsystem 17cb:1107,
+# board-id 255) that match no board-2.bin entry, so ath12k finds no board data
+# and Wi-Fi stays down. Install Qualcomm's own reference-design record as
+# board.bin, exactly as Omarchy's microsoft-surface-pro-11-support does (record,
+# size and checksum from its PKGBUILD); the Surface Laptop 7 port runs the same
+# data on the same 17cb:1107 card. ath12k reads board.bin only when board-2.bin
+# has no exact match, so a card that reports a listed board-id is unaffected.
+board_dir=/usr/lib/firmware/ath12k/WCN7850/hw2.0
+board_bin=/usr/lib/firmware/updates/ath12k/WCN7850/hw2.0/board.bin
+board_record='bus=pci,vendor=17cb,device=1107,subsystem-vendor=17cb,subsystem-device=3378,qmi-chip-id=2,qmi-board-id=255'
+if compgen -G "$board_dir/board.bin*" >/dev/null || [[ -f $board_bin ]]; then
+  echo "board.bin already present"
+else
+  container=$board_dir/board-2.bin
+  scratch=$(mktemp -d)
+  if [[ ! -f $container && -f $container.zst ]]; then
+    zstd -dq "$container.zst" -o "$scratch/board-2.bin" && container=$scratch/board-2.bin
+  fi
+  if python3 "$payload/extract-ath12k-board.py" --expected-bytes 88872 \
+    --expected-sha256 0ef5f6f3cb124f33c6de52371819ccd7c13763ceb86d476a178fd56e4cdc26a3 \
+    "$container" "$board_record" "$scratch/board.bin"; then
+    install -Dm644 "$scratch/board.bin" "$board_bin"
+    echo "Installed $board_bin"
+  else
+    warn "could not extract the Wi-Fi board record from $container; Wi-Fi may not come up"
+  fi
+  rm -rf "$scratch"
+fi
+
 step "Rebuilding the boot image"
 started=$(date +%s)
 log=$(mktemp)
@@ -115,6 +147,17 @@ for uki in "$esp"/EFI/Linux/*.efi; do
 done
 ((fresh > 0)) || die "no UKI was rebuilt under $esp/EFI/Linux (is ENABLE_UKI=yes? see /etc/limine-entry-tool.d/omarchy-uki.conf)"
 ((bad == 0)) || die "$bad rebuilt UKI(s) do not boot $compat"
+
+# The Surface UEFI is known to drop or reorder custom boot entries; say what it
+# will start, so a reboot straight into Windows is not a mystery.
+if efibootmgr >/dev/null 2>&1; then
+  first=$(efibootmgr | sed -n 's/^BootOrder: \([0-9A-Fa-f]*\).*/\1/p')
+  label=$(efibootmgr | sed -n "s/^Boot$first\*\{0,1\} \([^\t]*\).*/\1/p")
+  echo "Firmware boot order starts with: ${label:-unknown} (Boot$first)"
+  if [[ $label != *[Ll]imine* ]]; then
+    warn "Limine is not first; if the Surface starts Windows, move Limine to the top in UEFI > Boot configuration"
+  fi
+fi
 
 echo
 echo "sp11-lcd: DONE. The installed system boots the Surface Pro 11 LCD device tree."

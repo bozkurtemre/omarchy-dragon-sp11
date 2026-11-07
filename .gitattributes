@@ -1,0 +1,7 @@
+# These run under bash/python on Linux; a CRLF checkout (core.autocrlf=true) would break them,
+# and build/remaster.sh refuses to put CRLF files on the ISO.
+*.sh text eol=lf
+*.py text eol=lf
+*.conf text eol=lf
+sp11-lcd-devicetree text eol=lf
+Dockerfile text eol=lf

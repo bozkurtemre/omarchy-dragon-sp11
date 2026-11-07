@@ -22,13 +22,14 @@ derlenmez ve yabancı paket eklenmez.
 
 Omarchy 4.5.0 Snapdragon'u resmi olarak destekliyor. Çekirdeği (`linux-omarchy` 7.3)
 Surface Pro 11 için çok sayıda yama taşıyor ve LCD modelin tree'si
-(`x1p64100-microsoft-denali.dtb`) zaten ISO'nun içinde. Yine de bu modelde dört sorun var:
+(`x1p64100-microsoft-denali.dtb`) zaten ISO'nun içinde. Yine de bu modelde beş sorun var:
 
 | Sorun | Kanıt | Bu repo ne yapıyor |
 |---|---|---|
 | systemd-stub her Surface Pro 11'e **OLED** tree'sini yüklüyor. OLED, LCD ve X Plus modellerinin SMBIOS kimlikleri aynı ve systemd'nin `hwids` kaydı yalnızca `microsoft,denali-oled`'i tanıyor. Eşleşen bir `.dtbauto`, `.dtb`'nin önüne geçiyor (systemd `src/boot/stub.c`). | `tools/sp11-chid.ps1`: bu cihazın CHID'leri OLED kaydıyla 3, 4, 5, 6, 7, 8, 9 ve 10 numarada eşleşiyor. stub, CHID 3 ile OLED'i seçiyor. | Canlı UKI'ye ve kurulu UKI'ye LCD tree'si tek, koşulsuz `.dtb` olarak konuyor. Bir pre.d kancası bunu her yeniden derlemede koruyor. |
 | 4.5.0'da Surface Pro 11'e özel kurulum betiği yok. Klavye (`surface_aggregator`, `surface_hid`), ekran (`msm`, `panel-edp`, eDP PHY) ve pmic_glink sürücülerinin hepsi modül. Bu yüzden disk şifresi ekranında klavye ya da görüntü olmayabilir. | ISO'daki `modules.order` | Omarchy'nin quattro dalındaki Surface Pro 11 modül listesi, LCD paneline uyarlanarak initramfs'e ekleniyor. |
 | DSP/GPU firmware'i ya stable depoda yok ya da yalnızca Windows bölümünden çıkarılabiliyor. BitLocker açıkken bölüm okunamıyor. | stable aarch64 deposunda `microsoft-surface-pro-11-*` paketleri yok | Bu cihazın Windows sürücü deposundaki imzalı dosyalar ISO'ya konuyor ve Omarchy'nin `qcom-firmware-extract -d` aracıyla kuruluyor. |
+| Wi-Fi yok. Surface'in WCN7850 kartı genel kimlikler bildiriyor (alt sistem `17cb:1107`, board-id 255) ve bunlar `board-2.bin` içindeki hiçbir kayıtla eşleşmiyor. | Omarchy'nin `microsoft-surface-pro-11-support` PKGBUILD'i bunu Surface Pro 11 için belirtiyor. Surface Laptop 7 projesi de aynı kartta aynı kimlikle karşılaşmış. | Omarchy'nin paketinin kullandığı kaydın aynısı, aynı boyut ve SHA256 ile Qualcomm referans kaydı `board.bin` olarak kuruluyor. ath12k bu dosyayı yalnızca `board-2.bin` içinde birebir eşleşme yoksa okuyor. |
 | `ENABLE_UKI`, initramfs ve firmware hataları sessizce geçebilir. | Surface Laptop 7 projesinin deneyimi | `apply.sh`, açılacak UKI'yi baytlarına kadar okuyup doğruluyor. Doğrulama geçmezse "reboot güvenli" demiyor. |
 
 ## Bu cihazda doğrulananlar
@@ -55,6 +56,15 @@ Surface Pro 11 için çok sayıda yama taşıyor ve LCD modelin tree'si
      Şifre çözme saatler sürebilir. Omarchy'nin "free space" kurulumu BitLocker açıkken çalışmaz.
   2. *Disk Yönetimi*'nde C:'yi küçültün. 80–120 GB önerilir; şu an 157 GB boş.
 - En az 16 GB'lık bir **USB-C bellek** hazırlayın. ISO 6,1 GB.
+
+### 0.5 Keşif açılışı (önerilir, geri dönüşü zor adımlardan önce)
+BitLocker'ı çözmeden veya C:'yi küçültmeden önce USB'yi bir kez yalnızca canlı masaüstüne kadar açın:
+- Önce yönetici PowerShell'de `Suspend-BitLocker -MountPoint 'C:' -RebootCount 0` çalıştırın. Böylece
+  Secure Boot kapatıldıktan sonra Windows kurtarma anahtarı istemez. Windows'a döndüğünüzde
+  `Resume-BitLocker -MountPoint 'C:'` çalıştırın.
+- Aşağıdaki 1–4. adımları kurulum yapmadan, canlı masaüstüne kadar izleyin. Görüntüyü, klavyeyi ve
+  touchpad'i kontrol edin, `tr -d '\0' </proc/device-tree/model` çalıştırın; çıktıda "(LCD)" yazmalı.
+- Wi-Fi, ses ve pil burada değerlendirilemez: canlı sistemde Wi-Fi firmware'i yok ve DSP kapalı tutuluyor.
 
 ### 1. ISO'yu oluşturun (bu Surface'te, Windows'ta)
 Docker Desktop açıkken:
@@ -105,10 +115,9 @@ Windows'u tuttuysanız Limine'e eklemek için `sudo limine-scan` kullanın. Surf
 
 ## Bilinen eksikler ve açık konular
 
-- **Wi-Fi board verisi:** Bu kartın alt sistem kimliği (`17cb:1107`), Omarchy'nin OLED cihazda
-  doğruladığı kayıttan (`3378`) farklı. `board-2.bin` içinde `1107` için yalnızca board-id 44 ve 82
-  var. `dmesg` çıktısında `ath12k ... board data` hatası görürseniz bildirin. OLED kaydı bilerek
-  uygulanmadı.
+- **Wi-Fi board verisi:** Omarchy'nin OLED kurulumunda olduğu gibi `board.bin`, bu Surface'e özel
+  kalibrasyon değil, Qualcomm'un referans kalibrasyonu. Kartın istediği board-id'yi
+  `sudo dmesg | grep ath12k` ile görebilirsiniz.
 - **Bluetooth:** WCN7850, kendisine açık (public) adresi verilene kadar yapılandırılmamış kalıyor.
   Wi-Fi de her açılışta farklı bir geçici MAC alıyor. Omarchy'nin küçük
   `microsoft-surface-snapdragon-addresses` paketi, `MacAddressEmulationAddress` UEFI değişkenini
@@ -121,6 +130,8 @@ Windows'u tuttuysanız Limine'e eklemek için `sudo limine-scan` kullanın. Surf
   UCM ayarlarıyla ses açmayın; hoparlör zarar görebilir.
 - Düzeltmeden önce alınmış Snapper anlık görüntülerinin boot girdileri eski UKI'yi, yani OLED
   tree'sini açabilir.
+- *Setup → Reset Computer*, kurulum programının düzeltmeden önceki temel anlık görüntüsüne döner.
+  Sıfırlamadan sonra `apply.sh`'i USB'den yeniden çalıştırın.
 
 ## Nasıl çalışır
 
@@ -131,11 +142,13 @@ Windows'u tuttuysanız Limine'e eklemek için `sudo limine-scan` kullanın. Surf
 | `build/remaster.sh` | İmzayı doğrular. Canlı UKI'yi kendi çekirdeği, initrd'si ve canlı sistemin systemd-stub'ı (262.1) ile, LCD tree'si tek `.dtb` olacak şekilde yeniden kurar. ISO'yu volume tarihleri ve UUID korunarak paketler, sonra her adımı doğrular |
 | `build/uki-dtb.py` | UKI bölümlerini ayırır ve "bu UKI hangi tree ile açılır" kontrolünü yapar (bağımlılıksız; ISO'da ve kurulu sistemde de kullanılır) |
 | `payload/sp11-lcd/finish-install.sh` | Canlı USB'den kurulu sistemi açar, bağlar ve `apply.sh`'i chroot içinde çalıştırır |
-| `payload/sp11-lcd/apply.sh` | Cihaz kontrolü (panel EDID'i LGD mi), tree sabitleme, initramfs, firmware, yeniden derleme ve UKI doğrulama |
+| `payload/sp11-lcd/apply.sh` | Cihaz kontrolü (panel EDID'i LGD mi), tree sabitleme, initramfs, firmware, Wi-Fi board verisi, yeniden derleme, UKI doğrulama ve firmware boot sırası |
+| `payload/sp11-lcd/extract-ath12k-board.py` | Omarchy'nin MIT lisanslı board kaydı çıkarıcısının değiştirilmemiş kopyası |
 | `payload/sp11-lcd/sp11-lcd-devicetree` | `/etc/boot/hooks/pre.d/90-…`: her UKI derlemesinden önce `uki.conf` dosyasında LCD tree'sini sabitler |
 | `payload/sp11-lcd/zz-sp11-lcd.conf` | initramfs modülleri (yalnızca çekirdekte bulunanlar, `?` kullanmadan) |
 | `tools/sp11-chid.ps1` | Bu cihazın systemd CHID'lerini hesaplar ve hangi tree'nin seçileceğini gösterir |
-| `test/chroot-test.ps1`, `test/chroot-test.sh` | `build-iso.ps1`'den sonra çalıştırılır. Hazırlanan düzeltmeyi resmi hedef kök imajında (copy-on-write) uygular. Tree sabitlemesini, hedef çekirdek için üretilen initramfs'i, LCD device tree'sine göre firmware kurulumunu ve ortaya çıkan UKI'yi kontrol eder |
+| `test/chroot-test.ps1`, `test/chroot-test.sh` | `build-iso.ps1`'den sonra çalıştırılır. Hazırlanan düzeltmeyi resmi hedef kök imajında (copy-on-write) uygular. Tree sabitlemesini, hedef çekirdek için üretilen initramfs'i, LCD device tree'sine göre firmware kurulumunu, Wi-Fi board kaydını ve `limine-mkinitcpio`'nun derlediği şekilde üretilen UKI'yi kontrol eder |
+| `test/fstab-test.sh` | `finish-install.sh`'in fstab işleyişinin birim testi (Omarchy ISO ve genfstab biçimleri) |
 
 ## Upstream'e gönderilebilecekler
 - **systemd:** `x1p64100-microsoft-denali.json` (`microsoft,denali-lcd`). EDID panel CHID'leri

@@ -21,13 +21,14 @@ The kernel, packages and installer are Omarchy's own. Nothing is rebuilt and no 
 
 Omarchy 4.5.0 officially supports Snapdragon. Its kernel (`linux-omarchy` 7.3) carries many Surface
 Pro 11 patches, and the LCD model's device tree (`x1p64100-microsoft-denali.dtb`) is already on the
-ISO. Four problems remain on this model:
+ISO. Five problems remain on this model:
 
 | Problem | Evidence | What this repo does |
 |---|---|---|
 | systemd-stub loads the **OLED** device tree on every Surface Pro 11. The OLED, LCD and X Plus models report the same SMBIOS identity, and systemd's `hwids` entry knows only `microsoft,denali-oled`. A matching `.dtbauto` wins over a plain `.dtb` (systemd `src/boot/stub.c`). | `tools/sp11-chid.ps1`: this machine's CHIDs 3, 4, 5, 6, 7, 8, 9 and 10 match the OLED entry, and the stub picks OLED through CHID 3. | Both the live UKI and the installed UKI carry the LCD tree as their only, unconditional `.dtb`. A pre.d hook keeps it that way on every rebuild. |
 | 4.5.0 has no Surface Pro 11 setup. The keyboard (`surface_aggregator`, `surface_hid`), display (`msm`, `panel-edp`, eDP PHY) and pmic_glink drivers are all modules, so the disk unlock prompt may have no keyboard or no picture. | `modules.order` on the ISO | Adds Omarchy's Surface Pro 11 module list from the quattro branch to the initramfs, with the LCD's panel driver. |
 | DSP/GPU firmware is either missing from the stable repo or extractable only from the Windows partition, which BitLocker makes unreadable. | no `microsoft-surface-pro-11-*` packages in the stable aarch64 repo | Puts this device's signed files from the Windows driver store on the ISO and installs them with Omarchy's own `qcom-firmware-extract -d`. |
+| No Wi-Fi: the Surface's WCN7850 reports generic IDs (subsystem `17cb:1107`, board-id 255) that match no `board-2.bin` entry. | Omarchy's `microsoft-surface-pro-11-support` PKGBUILD says so for the Surface Pro 11; the Surface Laptop 7 port hits the same card and ID | Installs Qualcomm's reference-design record as `board.bin`, with the same record, size and SHA256 Omarchy's package uses. ath12k reads it only when `board-2.bin` has no exact match. |
 | `ENABLE_UKI`, initramfs and firmware failures can go unnoticed. | the Surface Laptop 7 project's experience | `apply.sh` reads the UKI that will boot, down to its bytes, and reports "safe to reboot" only when that check passes. |
 
 ## Verified on this device
@@ -53,6 +54,16 @@ ISO. Four problems remain on this model:
      take hours. Omarchy's "free space" install does not work while BitLocker is on.
   2. Shrink C: in *Disk Management*. 80–120 GB is recommended; 157 GB is free right now.
 - Get a **USB-C stick** of at least 16 GB. The ISO is 6.1 GB.
+
+### 0.5 Reconnaissance boot (recommended, before anything irreversible)
+Before decrypting BitLocker or shrinking C:, boot the stick once just to the live desktop:
+- In an admin PowerShell, run `Suspend-BitLocker -MountPoint 'C:' -RebootCount 0` first, so Windows
+  doesn't ask for the recovery key after Secure Boot is turned off. Run `Resume-BitLocker -MountPoint 'C:'`
+  when you are back in Windows.
+- Follow steps 1–4 below up to the live desktop, without installing. Check the picture, the keyboard and
+  the touchpad, and run `tr -d '\0' </proc/device-tree/model` (it should say "(LCD)").
+- Wi-Fi, sound and the battery can't be judged here: the live system has no Wi-Fi firmware and keeps
+  the DSP off.
 
 ### 1. Build the ISO (on this Surface, in Windows)
 With Docker Desktop running:
@@ -103,10 +114,8 @@ on a Surface: the Surface UEFI drops custom EFI boot entries.
 
 ## Known gaps and open questions
 
-- **Wi-Fi board data:** this card's subsystem ID (`17cb:1107`) differs from the record Omarchy
-  validated on the OLED unit (`3378`). `board-2.bin` has entries for `1107` only with board-id 44
-  and 82. Report it if `dmesg` shows an `ath12k ... board data` error. The OLED record is
-  deliberately not applied.
+- **Wi-Fi board data:** `board.bin` is Qualcomm's reference calibration, not this Surface's own, as on
+  Omarchy's OLED setup. `sudo dmesg | grep ath12k` shows the board-id the card asks for.
 - **Bluetooth:** the WCN7850 stays an unconfigured controller until it is given its public address,
   and Wi-Fi gets a different placeholder MAC on every boot. Omarchy's small
   `microsoft-surface-snapdragon-addresses` package fixes both from the `MacAddressEmulationAddress`
@@ -118,6 +127,8 @@ on a Surface: the Surface UEFI drops custom EFI boot entries.
   The speaker protection limiter is in that package too. Don't turn sound on with random UCM
   settings; the speakers can be damaged.
 - Boot entries of Snapper snapshots taken before the fix may start the old UKI, and with it the OLED tree.
+- *Setup → Reset Computer* restores the installer's baseline snapshot, which predates the fix: rerun
+  `apply.sh` from the USB stick afterwards.
 
 ## How it works
 
@@ -128,11 +139,13 @@ on a Surface: the Surface UEFI drops custom EFI boot entries.
 | `build/remaster.sh` | Verifies the signature. Rebuilds the live UKI from its own kernel and initrd and the live system's systemd-stub (262.1), with the LCD tree as its only `.dtb`. Repacks the ISO with the volume dates and UUID kept, then verifies every step |
 | `build/uki-dtb.py` | Splits UKI sections and answers "which tree does this UKI boot" (no dependencies; also used on the ISO and the installed system) |
 | `payload/sp11-lcd/finish-install.sh` | From the live USB: unlocks and mounts the installed system, runs `apply.sh` in a chroot |
-| `payload/sp11-lcd/apply.sh` | Device check (is the panel EDID LGD), tree pin, initramfs, firmware, rebuild, UKI verification |
+| `payload/sp11-lcd/apply.sh` | Device check (is the panel EDID LGD), tree pin, initramfs, firmware, Wi-Fi board data, rebuild, UKI verification, firmware boot order |
+| `payload/sp11-lcd/extract-ath12k-board.py` | Unmodified copy of Omarchy's MIT-licensed board record extractor |
 | `payload/sp11-lcd/sp11-lcd-devicetree` | `/etc/boot/hooks/pre.d/90-…`: pins the LCD tree in `uki.conf` before every UKI build |
 | `payload/sp11-lcd/zz-sp11-lcd.conf` | initramfs modules (only those the kernel has, without `?`) |
 | `tools/sp11-chid.ps1` | Computes this device's systemd CHIDs and shows which tree would be picked |
-| `test/chroot-test.ps1`, `test/chroot-test.sh` | Run after `build-iso.ps1`: applies the staged fix inside the official target root image (copy-on-write) and checks the tree pin, the initramfs built for the target kernel, firmware installation against the LCD device tree, and the resulting UKI |
+| `test/chroot-test.ps1`, `test/chroot-test.sh` | Run after `build-iso.ps1`: applies the staged fix inside the official target root image (copy-on-write) and checks the tree pin, the initramfs built for the target kernel, firmware installation against the LCD device tree, the Wi-Fi board record, and the UKI built the way `limine-mkinitcpio` builds it |
+| `test/fstab-test.sh` | Unit test of `finish-install.sh`'s fstab handling, for the Omarchy ISO's and genfstab's fstab formats |
 
 ## Upstream candidates
 - **systemd:** `x1p64100-microsoft-denali.json` (`microsoft,denali-lcd`). The EDID panel CHIDs
