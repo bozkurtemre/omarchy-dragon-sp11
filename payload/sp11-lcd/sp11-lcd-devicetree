@@ -1,0 +1,74 @@
+#!/bin/bash
+# Pin the Surface Pro 11 LCD device tree (x1p64100-microsoft-denali.dtb) in the UKI.
+#
+# Installed as /usr/local/lib/sp11-lcd/sp11-lcd-devicetree and linked from
+# /etc/boot/hooks/pre.d/90-sp11-lcd-devicetree, so limine-mkinitcpio runs it
+# before every boot image build, after Omarchy's own 20- hook.
+#
+# Why: Omarchy lists every Snapdragon tree as DeviceTreeAuto= in uki.conf and
+# systemd-stub picks one by SMBIOS hardware IDs. systemd's hwids map every
+# Surface Pro 11 to microsoft,denali-oled, because the OLED, LCD and X Plus
+# models report the same SMBIOS identity, and a matching .dtbauto section wins
+# over a plain .dtb (systemd src/boot/stub.c). So the auto list has to go and
+# the LCD tree is set as the one unconditional DeviceTree=.
+#
+# Must never stop a boot image build: any problem leaves uki.conf as it was
+# and exits 0, as Omarchy's own device tree hook does.
+set -u
+
+uki_config=${SP11_LCD_UKI_CONFIG:-/etc/kernel/uki.conf}
+dtb_root=${SP11_LCD_DTB_ROOT:-/boot/dtbs}
+begin="# BEGIN SP11 LCD DEVICE TREE"
+end="# END SP11 LCD DEVICE TREE"
+
+# The kernel package keeps its trees under its own name; take the Omarchy
+# kernel's first, as Omarchy's dtb-uki.sh does.
+dtb=""
+for candidate in "$dtb_root"/linux-omarchy*/qcom/x1p64100-microsoft-denali.dtb \
+  "$dtb_root"/qcom/x1p64100-microsoft-denali.dtb; do
+  if [[ -f $candidate ]]; then
+    dtb=$candidate
+    break
+  fi
+done
+if [[ -z $dtb ]]; then
+  echo "sp11-lcd: no x1p64100-microsoft-denali.dtb under $dtb_root; $uki_config left unchanged" >&2
+  exit 0
+fi
+
+mkdir -p "$(dirname "$uki_config")" || exit 0
+tmp=$(mktemp "$uki_config.XXXXXX") || exit 0
+
+# Drop Omarchy's managed auto list, its OLED pin and our previous block; keep
+# everything else (signing keys, cmdline, ...) as it is.
+if [[ -f $uki_config ]]; then
+  cp -p "$uki_config" "$tmp" &&
+    awk -v ours="$begin" '
+      $0 == "# BEGIN OMARCHY QUALCOMM DEVICE TREES" ||
+        $0 == "# BEGIN OMARCHY SURFACE PRO 11 DEVICE TREE" || $0 == ours { skip = 1; next }
+      skip && $0 ~ /^# END (OMARCHY QUALCOMM DEVICE TREES|OMARCHY SURFACE PRO 11 DEVICE TREE|SP11 LCD DEVICE TREE)$/ { skip = 0; next }
+      !skip { print }
+    ' "$uki_config" >"$tmp" || { rm -f "$tmp"; exit 0; }
+else
+  chmod 0644 "$tmp" || { rm -f "$tmp"; exit 0; }
+fi
+
+printf '%s\n' \
+  "$begin" \
+  "# Surface Pro 11 LCD (Snapdragon X Plus). Kept by /etc/boot/hooks/pre.d/90-sp11-lcd-devicetree." \
+  "[UKI]" \
+  "DeviceTree=$dtb" \
+  "$end" >>"$tmp" || { rm -f "$tmp"; exit 0; }
+
+if grep -q '^DeviceTreeAuto=' "$tmp"; then
+  echo "sp11-lcd: $uki_config still has a DeviceTreeAuto= line outside the managed blocks; systemd-stub may pick the OLED tree" >&2
+fi
+
+if [[ -f $uki_config ]] && cmp -s "$tmp" "$uki_config"; then
+  rm -f "$tmp"
+elif mv -f "$tmp" "$uki_config"; then
+  echo "sp11-lcd: pinned $dtb in $uki_config"
+else
+  rm -f "$tmp"
+fi
+exit 0

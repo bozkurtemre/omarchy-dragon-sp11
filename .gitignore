@@ -1,0 +1,11 @@
+# Third-party checkouts used for research (see README "Kaynaklar")
+/upstream/
+
+# Build outputs and anything carrying Microsoft/Qualcomm firmware.
+# build-iso.ps1 keeps these under %USERPROFILE%\sp11-omarchy-build, but never commit them.
+*.iso
+*.iso.sha256
+*.efi
+*.mbn
+*.elf
+firmware/
