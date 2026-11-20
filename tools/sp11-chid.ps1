@@ -2,12 +2,21 @@
 # Mirrors systemd src/fundamental/chid.c + src/boot/chid.c: the stub populates only
 # manufacturer/family/product/sku/baseboard/EDID-panel and matches in a fixed priority.
 #
-# Example (shows which device tree systemd-stub would pick for this Surface):
+# Examples (show which device tree systemd-stub would pick for this Surface):
+#   .\tools\sp11-chid.ps1 -HwidsJson .\contrib\systemd-x1p64100-microsoft-denali.json -Panel LGD077B
 #   curl.exe -sLo denali.json https://raw.githubusercontent.com/systemd/systemd/main/src/boot/hwids/aa64/x1e80100-microsoft-denali.json
 #   .\tools\sp11-chid.ps1 -HwidsJson .\denali.json -Panel LGD077B
-# -Panel is the internal panel's EDID ID (Device Manager > Monitors, or HKLM:\SYSTEM\CurrentControlSet\Enum\DISPLAY).
+# -Panel is the internal panel's EDID ID: the PNP vendor and product code, as Windows names its
+# monitor (Device Manager > Monitors, or HKLM:\SYSTEM\CurrentControlSet\Enum\DISPLAY). systemd-stub
+# writes the product code as lowercase hex (LGD077b); the script lowercases it itself. Without
+# -Panel the EDID CHIDs are skipped, which is what the stub does when the firmware hides the EDID.
 param([Parameter(Mandatory)] [string] $HwidsJson, [string] $Panel)
 
+if ($Panel) {
+  if ($Panel -notmatch '^([A-Za-z]{3})([0-9A-Fa-f]{4})$') { throw "-Panel '$Panel' is not a PNP vendor and a 4-digit hex product code, like LGD077B" }
+  $Panel = $matches[1].ToUpperInvariant() + $matches[2].ToLowerInvariant()
+  "panel ID as systemd-stub computes it: $Panel"
+}
 $bios = Get-ItemProperty 'HKLM:\HARDWARE\DESCRIPTION\System\BIOS'
 $f = @{
   manufacturer    = $bios.SystemManufacturer.Trim()

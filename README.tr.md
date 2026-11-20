@@ -2,194 +2,333 @@
 
 [English](README.md) | **Türkçe**
 
-[Omarchy](https://omarchy.org) 4.5'i **Microsoft Surface Pro 11'in LCD / Snapdragon X Plus
-(X1P64100)** modeline kurmak için resmi Omarchy aarch64 ISO'sunun üzerine ince bir katman.
+[Omarchy](https://omarchy.org)'yi **Microsoft Surface Pro 11'in LCD / Snapdragon X Plus (X1P64100,
+`microsoft,denali-lcd`)** modeline, Omarchy'nin kendi aarch64 **edge** ISO'suyla kurmak; buna ek
+olarak upstream'in dağıtamayacağı tek şey: tam disk kurulumunun sildiği, bu makineye ait Windows
+dosyaları.
 
-Resmi, imzalı ISO'ya yalnızca iki şey eklenir:
+> **Durum, 2026-11-20:** edge ISO'yla gerçek cihazda henüz hiçbir şey açılmadı. Bu reponun önceki,
+> 4.5.0 tabanlı ISO'suyla 2026-11-08'de yapılan deneme açılışı LCD panelde kurulum programına kadar
+> geldi. Burada üretilen ISO aşağıdaki konteyner testlerinden geçiyor; Surface'teki sonuçlar buraya
+> eklenecek.
 
-1. Canlı (live) UKI, LCD modelin device tree'siyle açılır.
-2. Kurulumdan sonra bir kez çalıştırılan `sp11-lcd/` düzeltmesi eklenir. Bu düzeltme,
-   kurulan sistemin de doğru tree, initramfs ve firmware ile açılmasını sağlar ve Omarchy'nin
-   Surface Pro 11 paketlerini (ses, dokunmatik ve kalem, ışık sensörü, Bluetooth) USB'den kurar.
+## Omarchy artık ne yapıyor
 
-Çekirdek, paketler ve kurulum programı Omarchy'nin kendisidir. Hiçbir şey yeniden
-derlenmez ve yabancı paket eklenmez: Surface Pro 11 paketleri, Omarchy'nin edge deposundaki
-imzalı paketlerdir. Yalnızca bu beş paket edge'i izler (`omarchy-update` içindeki bir kancayla),
-geri kalan her şey stable'da kalır. Değerlendirilen seçenekler için
-[docs/full-hardware-support.md](docs/full-hardware-support.md) (İngilizce).
+LCD model upstream'de destekleniyor, ama yalnızca edge kanalında (stable ve rc hâlâ 4.5.0-3; 4.5.0'dan
+yeni bir sürüm yok):
 
-> **Durum:** ISO derleniyor ve otomatik kontrollerden geçiyor. `sp11-lcd` düzeltmesi de resmi ISO'nun
-> hedef kök imajında bütün kontrolleri geçiyor (`test/`). Gerçek cihazda kurulum henüz yapılmadı;
-> sonuçlar bu dosyaya eklenecek.
+- **omarchy [PR #18276](https://github.com/omacom/omarchy/pull/18276)**, Iván Ruiz (rdereparadores),
+  2026-11-11'de birleştirildi (`b19ad9764d78`): `install/hardware/microsoft/surface-pro-11.sh` her
+  Surface Pro 11'i (`microsoft,denali`) tanıyor, `/sys/devices/soc0/soc_id` 615 (X1P-64-100) ise
+  UKI'ye `x1p64100-microsoft-denali.dtb`'yi sabitliyor, disk şifresi ekranı panele ulaşsın diye
+  initramfs'e `panel_edp`, `pwm_bl` ve `leds_qcom_lpg` ekliyor ve Surface Pro 11 paketlerini
+  (`microsoft-surface-pro-11-support`, `iptsd`, `microsoft-surface-pro-11-sensors`) kuruyor.
+- **omarchy-pkgs #2378, #2379, #2382**, aynı yazardan: sensör ve destek paketleri iki modelin ortak
+  compatible'ı `microsoft,denali` üzerinden çalışıyor; çekirdek paketinde LCD tree'sine PWM arka
+  ışığı eklendi, X1P-64-100'de devre dışı olan çekirdekler çıkarıldı ve LCD hwids kaydı
+  (`x1p64100-microsoft-denali.json`) geldi; böylece systemd-stub LCD tree'sini panelin EDID'iyle
+  seçebiliyor. Edge bunları bugün `linux-omarchy` 7.3-73 ve `linux-omarchy-dtbs` 7.3-52 olarak
+  taşıyor.
+- **Yazarın LCD cihazda test ettikleri:** parlaklık, cpufreq'li on çekirdek, ses, uyku ve disk şifresi
+  ekranı (PR #18276); Wi-Fi, Bluetooth, hoparlörler ve mikrofonlar, iki kamera, Surface Pro
+  Keyboard'un klavyesi ve touchpad'i, dokunmatik ve kalem, uykudan dönüşte de (omarchy-pkgs #2379).
+  **Orada test edilmeyenler:** LCD modele ISO'dan temiz kurulum, Flex Keyboard'un Bluetooth
+  eşleştirmesi, Slim Pen eşleştirmesi.
 
-## Neden gerekli?
+Bu reponun eskiden etrafından dolaştığı her şey (device tree sabitleme, initramfs modülleri,
+paketlerin yalnızca OLED'i kabul eden kontrolleri, stable sistemde edge paketleri, Wi-Fi board verisi,
+DSP ve GPU firmware'i) artık edge kurulum programı ve paketleri tarafından yapılıyor. Bkz.
+[2026-11-20'de ne değişti](#2026-11-20de-ne-değişti).
 
-Omarchy 4.5.0 Snapdragon'u resmi olarak destekliyor. Çekirdeği (`linux-omarchy` 7.3)
-Surface Pro 11 için çok sayıda yama taşıyor ve LCD modelin tree'si
-(`x1p64100-microsoft-denali.dtb`) zaten ISO'nun içinde. Yine de bu modelde beş sorun var:
+## Bu repo ne ekliyor
 
-| Sorun | Kanıt | Bu repo ne yapıyor |
-|---|---|---|
-| systemd-stub her Surface Pro 11'e **OLED** tree'sini yüklüyor. OLED, LCD ve X Plus modellerinin SMBIOS kimlikleri aynı ve systemd'nin `hwids` kaydı yalnızca `microsoft,denali-oled`'i tanıyor. Eşleşen bir `.dtbauto`, `.dtb`'nin önüne geçiyor (systemd `src/boot/stub.c`). | `tools/sp11-chid.ps1`: bu cihazın CHID'leri OLED kaydıyla 3, 4, 5, 6, 7, 8, 9 ve 10 numarada eşleşiyor. stub, CHID 3 ile OLED'i seçiyor. | Canlı UKI'ye ve kurulu UKI'ye LCD tree'si tek, koşulsuz `.dtb` olarak konuyor. Bir pre.d kancası bunu her yeniden derlemede koruyor. |
-| 4.5.0'da Surface Pro 11'e özel kurulum betiği yok. Klavye (`surface_aggregator`, `surface_hid`), ekran (`msm`, `panel-edp`, eDP PHY) ve pmic_glink sürücülerinin hepsi modül. Bu yüzden disk şifresi ekranında klavye ya da görüntü olmayabilir. | ISO'daki `modules.order` | Omarchy'nin quattro dalındaki Surface Pro 11 modül listesi, LCD paneline uyarlanarak initramfs'e ekleniyor. |
-| DSP/GPU firmware'i ya stable depoda yok ya da yalnızca Windows bölümünden çıkarılabiliyor. BitLocker açıkken bölüm okunamıyor. | stable aarch64 deposunda `microsoft-surface-pro-11-*` paketleri yok | Bu cihazın Windows sürücü deposundaki imzalı dosyalar ISO'ya konuyor ve Omarchy'nin `qcom-firmware-extract -d` aracıyla kuruluyor. |
-| Wi-Fi yok. Surface'in WCN7850 kartı genel kimlikler bildiriyor (alt sistem `17cb:1107`, board-id 255) ve bunlar `board-2.bin` içindeki hiçbir kayıtla eşleşmiyor. | Omarchy'nin `microsoft-surface-pro-11-support` PKGBUILD'i bunu Surface Pro 11 için belirtiyor. Surface Laptop 7 projesi de aynı kartta aynı kimlikle karşılaşmış. | Omarchy'nin paketinin kullandığı kaydın aynısı, aynı boyut ve SHA256 ile Qualcomm referans kaydı `board.bin` olarak kuruluyor. ath12k bu dosyayı yalnızca `board-2.bin` içinde birebir eşleşme yoksa okuyor. |
-| `ENABLE_UKI`, initramfs ve firmware hataları sessizce geçebilir. | Surface Laptop 7 projesinin deneyimi | `apply.sh`, açılacak UKI'yi baytlarına kadar okuyup doğruluyor. Doğrulama geçmezse "reboot güvenli" demiyor. |
+1. **ISO'da `/sp11-lcd/`**; varsayılan olarak Omarchy'nin edge ISO'sundaki tek değişiklik:
+   - `windows/`: bu makinenin Windows sürücü deposunda INF'i sağlayıcı olarak Surface, Qualcomm ya da
+     Dolby diyen her sürücü paketi (burada 202 paket, 1104 dosya, 1,3 GB), `device-facts.json` ve bir
+     `SHA256SUMS` listesiyle. Bkz. [Windows arşivi](#windows-arşivi).
+   - `setup.sh`, ilk açılıştan sonra bir kez çalıştırılır: arşivi `/var/lib/sp11-lcd/windows`'a
+     (yalnızca root) kopyalar ve Omarchy'nin kendi `surface-pro-11-sensors-extract -d` aracını onun
+     üzerinde çalıştırır. Işık sensörü yapılandırması, upstream'in hâlâ Windows'tan
+     (`DriverStore/.../surfacepro_snscfgcrd8380.inf_arm64_*`) okuduğu tek şey; tam disk kurulumu
+     onu siler, BitLocker gizler.
+2. **`-LcdOnlyUki`, varsayılan olarak kapalı:** Surface firmware'i panelin EDID'ini systemd-stub'a
+   vermezse diye canlı UKI'yi yalnızca LCD tree'siyle yeniden kurar. Bkz.
+   [Canlı oturum OLED tree'siyle açılırsa](#canlı-oturum-oled-treesiyle-açılırsa).
+3. **[contrib/](contrib/README.md):** upstream'e hâlâ gönderilmeye değer olanlar (İngilizce).
 
-## Bu cihazda doğrulananlar
+Çekirdek, paketler ve kurulum programı Omarchy'nin kendisidir. Hiçbir şey yeniden derlenmez, başka
+bir yerden hiçbir şey kurulmaz.
 
-| | |
-|---|---|
-| Model | Surface Pro 11th Edition, SKU `Surface_Pro_11th_Edition_2076`, UEFI 175.449.235 |
-| SoC | Snapdragon X Plus 10 çekirdek **X1P64100** |
-| Dahili panel | **LGD077B** (LG LP129WT3 LCD), dahili eDP (`0x80000000`). SAM7395 harici bir monitör. |
-| Wi-Fi | Qualcomm WCN7850 (FastConnect 7800), `17cb:1107`, alt sistem `17cb:1107` |
-| Firmware | `qcadsp8380.mbn`, `adsp_dtbs.elf`, `qccdsp8380.mbn`, `cdsp_dtbs.elf`, `qcdxkmsuc8380.mbn` ve `battmgr.jsn` dosyalarının SHA256 değerleri Omarchy'nin `microsoft-surface-pro-11-firmware` paketindekilerle (Microsoft MSI 26.094.41119.0) **birebir aynı** |
-| Disk | SK hynix UFS 256 GB, GPT, BitLocker **açık** |
-| ISO | `omarchy-4.5.0-aarch64.iso`: SHA256 ve GPG imzası doğrulandı (Omarchy anahtarı `40DF B630 FF42 BCFF B047 046C F013 4EE6 80CA C571`) |
+## Windows'u silmeden önce
+
+Bunları hiçbir betik sizin yerinize yapamaz:
+
+- **Windows Update'i ve bütün Surface firmware güncellemelerini bitirin.** Surface firmware'i (UEFI
+  ile dokunmatik, kalem ve klavye firmware'i) Windows Update üzerinden gelir; Omarchy'de Surface
+  UEFI'sini güncellemenin bir yolu yok.
+- <https://support.microsoft.com/surface-recovery-image> adresinden bir **Surface Recovery Image
+  USB'si** hazırlayın (seri numarası gerekir; ayağın altında ya da *Ayarlar > Sistem > Hakkında*'da).
+  Windows'a ve firmware güncellemelerine dönüş yolu odur.
+- **Kişisel verilerinizi yedekleyin** ve **BitLocker kurtarma anahtarını** kaydedin
+  (<https://aka.ms/myrecoverykey>).
+- **ISO'yu Windows hâlâ duruyorken oluşturun** (aşağıda): arşiv bu Windows kurulumundan kopyalanır.
+- **Makinenin dışında bir kopya daha tutun.** Kurulumdan sonra bu dosyaların tek kopyaları USB bellek
+  ve `/var/lib/sp11-lcd/windows` olur. ISO'yu ya da hazırlanan
+  `%USERPROFILE%\sp11-omarchy-build\payload\sp11-lcd` klasörünü başka bir diske ya da kendi bulut
+  depolamanıza kopyalayın. İçinde bu cihaza ait Microsoft, Qualcomm ve Dolby dosyaları var: kimseyle
+  paylaşmayın.
 
 ## Kurulum
 
-### 0. Windows'ta hazırlık
-- Windows Update'ten bütün güncellemeleri ve Surface firmware güncellemelerini kurun. Surface UEFI
-  yalnızca Windows üzerinden güncellenir.
-- **BitLocker kurtarma anahtarını** kaydedin (<https://aka.ms/myrecoverykey>). Secure Boot
-  kapatıldığında Windows bu anahtarı isteyecektir.
-- **Windows'u tutacaksanız (önerilen):**
-  1. *Ayarlar → Gizlilik ve güvenlik → Cihaz şifreleme* menüsünden BitLocker'ı kapatın.
-     Şifre çözme saatler sürebilir. Omarchy'nin "free space" kurulumu BitLocker açıkken çalışmaz.
-  2. *Disk Yönetimi*'nde C:'yi küçültün. 80–120 GB önerilir; şu an 157 GB boş.
-- En az 16 GB'lık bir **USB-C bellek** hazırlayın. ISO 6,1 GB.
-
-### 0.5 Keşif açılışı (önerilir, geri dönüşü zor adımlardan önce)
-BitLocker'ı çözmeden veya C:'yi küçültmeden önce USB'yi bir kez yalnızca canlı masaüstüne kadar açın:
-- Önce yönetici PowerShell'de `Suspend-BitLocker -MountPoint 'C:' -RebootCount 0` çalıştırın. Böylece
-  Secure Boot kapatıldıktan sonra Windows kurtarma anahtarı istemez. Windows'a döndüğünüzde
-  `Resume-BitLocker -MountPoint 'C:'` çalıştırın.
-- Aşağıdaki 1–4. adımları kurulum yapmadan, canlı masaüstüne kadar izleyin. Görüntüyü, klavyeyi ve
-  touchpad'i kontrol edin, `tr -d '\0' </proc/device-tree/model` çalıştırın; çıktıda "(LCD)" yazmalı.
-- Wi-Fi, ses ve pil burada değerlendirilemez: canlı sistemde Wi-Fi firmware'i yok ve DSP kapalı tutuluyor.
-
 ### 1. ISO'yu oluşturun (bu Surface'te, Windows'ta)
+
 Docker Desktop açıkken:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-iso.ps1
 ```
 
-Çıktı `%USERPROFILE%\sp11-omarchy-build\out\omarchy-4.5.0-aarch64-sp11-lcd.iso` olur.
-Betik önce resmi ISO'nun imzasını doğrular. Sonuçta volume UUID'sinin, boot kayıtlarının ve
-LCD-only UKI'nin doğru olduğunu kontrol eder; biri bile tutmazsa durur.
+- Taban, <https://nightly.omarchy.org/edge-aarch64/latest.json> dosyasının gösterdiği resmi edge
+  nightly ISO'su (8,5 GB, `%USERPROFILE%\sp11-omarchy-build\dl` içine bir kez indirilir). Betik
+  boyutunu ve SHA256'sını `latest.json` ve `.sha256` dosyasıyla karşılaştırır. **Edge ISO'larının
+  sürüm imzası yoktur**: sağlama toplamı indirmenin Omarchy'nin sunucusundan bozulmadan geldiğini
+  kanıtlar, ISO'yu kimin oluşturduğunu değil. [build/edge/build-edge-iso.sh](build/edge/build-edge-iso.sh)
+  ile kendiniz oluşturduğunuz bir ISO'yu kullanmak için `-Iso <yol>` verin.
+- Çıktı `%USERPROFILE%\sp11-omarchy-build\out\<taban adı>-sp11-lcd.iso` (yaklaşık 9,9 GB); yanında
+  `.sha256` ve `.provenance.txt` (taban sürümü, `iso_commit`, `omarchy_version`, çekirdek, sağlama
+  toplamları) olur. Toplamda yaklaşık 20 GB gerekir (8,5 GB'lık indirme, 1,3 GB'lık arşiv ve çıktı);
+  betik, boş alan 8 GB'ın altına inecekse başlamadan durur.
+- Sonda volume UUID'sinin, tarihlerin, boot kayıtlarının, GRUB menüsünün ve canlı UKI'nin tabanınkiyle
+  aynı olduğunu, `/sp11-lcd`'nin de hazırlananla dosya dosya eşleştiğini kontrol eder.
 
-### 2. USB'ye yazın
-[Rufus](https://rufus.ie)'un ARM64 sürümünü kullanın ve **DD imaj modunu** seçin. Ventoy kullanmayın:
-ISO, GRUB → UKI zinciriyle ve volume UUID'siyle açılır.
+### 2. USB belleğe yazın
 
-### 3. Surface UEFI ayarları
-- Surface kapalıyken **Ses Açma + Güç** tuşlarına basarak UEFI'ye girin.
-- *Security → Secure Boot* ayarını **Disabled** yapın.
-- *Boot configuration* altında USB'yi en üste alın, ya da açılışta **Ses Kısma + Güç** ile USB'den başlatın.
+En az 16 GB. [Rufus](https://rufus.ie)'un ARM64 sürümünü **DD imaj modunda** kullanın. Ventoy
+kullanmayın: ISO, GRUB ve bir UKI üzerinden açılır ve kendini volume UUID'siyle bulur.
 
-### 4. USB'den başlatın ve kurun
-- GRUB, Snapdragon'u algılayıp "device tree" girdisini kendiliğinden açar. 1–3 dakika siyah ekran normal.
-- Canlı ortamda pil yüzdesi ve ses çalışmaz (DSP bilerek kapalı). Bu bir hata değil.
-- Kurulum programında Windows'u tutuyorsanız **Free space install** seçin. Disk şifrelemeyi açık bırakın.
+### 3. Deneme açılışı (önerilir, geri dönüşü olmayan adımlardan önce)
 
-### 5. Yeniden başlatmadan önce: `sp11-lcd`
-Kurulum "bitti" dediğinde **yeniden başlatmayın**. Canlı USB'de Wi-Fi yoktur; paketlerin USB'de
-taşınmasının sebebi bu:
+1. Yönetici PowerShell'de: `Suspend-BitLocker -MountPoint 'C:' -RebootCount 0`; böylece Secure Boot
+   kapatıldıktan sonra Windows kurtarma anahtarı istemez.
+2. Surface kapalıyken UEFI için **Ses Açma + Güç**'e basılı tutun. *Security > Secure Boot*'u
+   **Disabled** yapın. USB'den **Ses Kısma + Güç** ile başlatın ya da *Boot configuration*'da USB'yi
+   en üste alın.
+3. GRUB, Snapdragon'da "device tree" girdisini kendisi seçer; bir dakika ya da daha uzun siyah ekran
+   normaldir. Canlı oturum doğrudan Omarchy'nin kurulum programını açar. Henüz kurmayın.
+4. **Ctrl+Alt+F2** bir konsol açar; `root` olarak girin (parola yok). Kontrol edin:
+   ```
+   tr -d '\0' </proc/device-tree/model; echo   # Microsoft Surface Pro 11th Edition (LCD)
+   cat /sys/devices/soc0/soc_id                 # 615
+   cd /run/archiso/bootmnt/sp11-lcd/windows && sha256sum --quiet -c SHA256SUMS && echo archive ok
+   ```
+   Son satır, Windows hâlâ yerindeyken bu bellekteki arşivin okunabilir ve eksiksiz olduğunu
+   kanıtlar (yol farklıysa `findmnt -n -o TARGET /run/archiso/bootmnt` ortamı gösterir).
+   Görüntüyü, klavyeyi ve touchpad'i de kontrol edin. Model "(OLED)" diyorsa
+   [aşağıya](#canlı-oturum-oled-treesiyle-açılırsa) bakın.
+5. Windows'a dönünce: `Resume-BitLocker -MountPoint 'C:'`.
 
-```
-Ctrl+Alt+F2  →  root (parola yok)
-bash /run/archiso/bootmnt/sp11-lcd/finish-install.sh
-```
+### 4. Kurun
 
-Disk parolanızı girin. Ekranda `It is safe to reboot.` yazısını görünce `reboot` yazın ve ekran
-kararınca USB'yi çıkarın. Ayrıntılar `payload/sp11-lcd/README.md` dosyasında.
+- **Tam disk kurulumu** (Windows'u siler): kurulum programında diskin tamamını seçin. Omarchy'nin
+  Surface Pro 11 adımı ışık sensörü yapılandırmasını okuyacak bir Windows bulamaz; onu ilk açılıştan
+  sonra `setup.sh` sağlar.
+- **Çift açılış:** Omarchy'nin boş alana kurulumu için BitLocker'ın kapatılması (*Ayarlar > Gizlilik
+  ve güvenlik > Cihaz şifreleme*; şifre çözme saatler sürer) ve *Disk Yönetimi*'nde C: küçültülerek
+  boş alan açılması gerekir. Omarchy sensör yapılandırmasını o zaman Windows'tan kendisi okur; arşivi
+  saklamanın yolu yine `setup.sh`.
+- **Secure Boot kapalı** kalsın. Disk şifrelemeyi açık bırakın.
 
-### 6. İlk açılışta kontrol
+### 5. İlk açılış
+
+Belleği bağlayın ve `setup.sh`'i bir kez çalıştırın (ayrıntılar
+[payload/sp11-lcd/README.md](payload/sp11-lcd/README.md) dosyasında, İngilizce):
 
 ```bash
-tr -d '\0' </proc/device-tree/model; echo        # "Microsoft Surface Pro 11th Edition (LCD)"
-sudo dmesg | grep -iE 'remoteproc|ath12k|msm_dpu' | head -30
-qcom-firmware-extract --list-missing             # boş olmalı
-systemctl status 'iptsd@*' surface-pro-11-sensors   # dokunmatik/kalem ve ışık sensörü servisleri
-wpctl status | grep -A3 Sinks                    # varsayılan çıkış "Internal speakers" olmalı
-bluetoothctl show | grep -E 'Controller|Powered' # 00:00:00:00:00:00 değil, gerçek bir adres
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt    # etiketi lsblk -f gösterir
+sudo bash /mnt/sp11-lcd/setup.sh
+sudo umount /mnt
 ```
 
-Windows'u tuttuysanız Limine'e eklemek için `sudo limine-scan` kullanın. Surface'te
-*Setup → Direct Boot* **kullanmayın**: Surface UEFI özel EFI girdilerini düşürüyor.
+Sonra kontrol edin:
 
-## Ses, dokunmatik, sensörler ve Bluetooth
+```bash
+tr -d '\0' </proc/device-tree/model; echo           # Microsoft Surface Pro 11th Edition (LCD)
+cat /sys/devices/soc0/soc_id                         # 615
+grep -A2 'BEGIN OMARCHY SURFACE PRO 11' /etc/kernel/uki.conf   # DeviceTree=.../x1p64100-microsoft-denali.dtb
+omarchy-channel-current                              # edge
+systemctl status surface-pro-11-sensors              # active (ışık sensörü)
+wpctl status | grep -A3 Sinks                        # varsayılan çıkış "Internal speakers"
+bluetoothctl show | grep -E 'Controller|Powered'     # 00:00:00:00:00:00 değil, gerçek bir adres
+sudo jq .addresses /var/lib/sp11-lcd/windows/device-facts.json   # Windows'un kullandığı adresler
+qcom-firmware-extract --list-missing                 # hiçbir şey yazmaz
+```
 
-Omarchy'nin Surface Pro 11 paketleri yalnızca edge deposunda ve OLED modelin device tree'sini
-arıyor. `apply.sh` bunları USB'den kurar (`sp11-lcd/pkgs/`; ISO derlenirken resmi hedef imajın içinde
-pacman'le, imzalarıyla birlikte çekilir), her güncellemede yeniden çalışan bir pacman kancasıyla
-`microsoft,denali-oled` kontrolünü ortak `microsoft,denali` ile değiştirir ve ışık sensörünün
-yapılandırmasını bu cihazın Windows sürücü deposundan çıkarır (`sp11-lcd/sensors/`). Stable kanalında
-bu paketler yok ve pacman edge'i stable'ın yanına ikinci depo olarak ekleyemiyor (deponun veritabanı
-bölüm adını taşır; Omarchy yalnızca `omarchy.db` sunuyor). Bu yüzden `sp11-lcd-update`, edge'in
-veritabanını okuyup yalnızca bu paketlerin yeni sürümlerini `pacman -U` ile URL'den, imza doğrulamalı
-kurar. Omarchy'nin `post-update` kancası bunu her `omarchy-update` sonrasında çalıştırır.
+Model "(OLED)" diyorsa ya da `uki.conf` `x1e80100-microsoft-denali-oled.dtb`'yi gösteriyorsa, kurulum
+programı socinfo kimliği 615'i görmemiştir (bkz. açık konular). PR #18276'nın migration'ı tam olarak
+bu durum için yazıldı (burada denenmedi): kendi kullanıcınızla
+`OMARCHY_PATH=/usr/share/omarchy bash /usr/share/omarchy/migrations/1794228778.sh` çalıştırın (sudo
+ister, Surface Pro 11 kurulumunu yeniden çalıştırır ve UKI'yi yeniden derler), sonra yeniden başlatın.
 
-| Paket | Sağladığı |
-|---|---|
-| `microsoft-surface-pro-11-support` | Hoparlör topolojisi ve UCM, hoparlör koruması (bu cihazın Dolby ayarı `MSHW0486 REV_0D` ile üretilmiş limitleyici), Wi-Fi board verisi, Flex Klavye ve Slim Pen Bluetooth eşleştirmesi, uyku kancaları |
-| `iptsd` | Dokunmatik ekran ve kalem |
-| `microsoft-surface-pro-11-sensors` | Ortam ışığı sensörü (otomatik parlaklık), ADSP üzerinden |
-| `microsoft-surface-snapdragon-addresses` | Bluetooth adresi ve sabit Wi-Fi MAC'i; bu olmadan WCN7850 yapılandırılmamış bir Bluetooth denetleyicisi olarak kalıyor |
-| `microsoft-surface-pro-11-firmware` | DSP/GPU firmware'i, Microsoft'un MSI'sinden (sürücü deposundaki kopyalarla aynı) |
+### Kurulan sistem edge kanalını izler
 
-Bunun LCD modele uyması neden bekleniyor: ses kartı düğümü, hoparlör yolları ve dijitalleştirici iki
-modelin paylaştığı device tree'de; bu cihazın ses ayar kimliği ve sensör yapılandırma özetleri
-Omarchy'nin OLED cihazda doğruladıklarıyla aynı; Surface Pro 11 çekirdek yamalarının hepsi zaten stable
-çekirdekte. Sesi başka UCM ayarlarıyla açmayın; hoparlörün tek koruması bu limitleyici.
+Edge ISO'su `omarchy-dev`'i ve Omarchy'nin edge depolarını kurar; böylece `omarchy-update` Omarchy'nin,
+çekirdeğin ve Surface paketlerinin edge'deki günlük derlemelerini, bir sürümden geçmeden getirir:
+Omarchy'nin aldığı Snapper anlık görüntülerini tutun ve güncelleme çıktısını okuyun. 4.5.0'dan yeni bir stable sürüm PR #18276'yı ve
+yukarıdaki paketleri içerene kadar **stable'a geçmeyin** (`omarchy-channel-set stable`): 4.5.0'da
+Surface Pro 11 kurulumu hiç yok.
 
-## Bilinen eksikler ve açık konular
+## Canlı oturum OLED tree'siyle açılırsa
 
-- **Wi-Fi board verisi:** Omarchy'nin OLED kurulumunda olduğu gibi `board.bin`, bu Surface'e özel
-  kalibrasyon değil, Qualcomm'un referans kalibrasyonu. Kartın istediği board-id'yi
-  `sudo dmesg | grep ath12k` ile görebilirsiniz.
-- **Stable sistemde edge paketleri:** edge bu beş paketten birini stable aynasında henüz olmayan bir
-  kütüphaneye karşı derlerse, `omarchy-update` o paket için bağımlılık hatası verir; stable aynası
-  yetişince (en fazla bir ay) geçer. Başka hiçbir şey etkilenmez.
-- Düzeltmeden önce alınmış Snapper anlık görüntülerinin boot girdileri eski UKI'yi, yani OLED
-  tree'sini açabilir.
-- *Setup → Reset Computer*, kurulum programının düzeltmeden önceki temel anlık görüntüsüne döner.
-  Sıfırlamadan sonra `apply.sh`'i USB'den yeniden çalıştırın.
+Canlı UKI her Snapdragon tree'sini `.dtbauto` olarak ve systemd'nin `.hwids` bölümünü taşır.
+systemd-stub LCD tree'sini yalnızca panelin EDID kimliğini (`LGD077b`) içeren üç CHID ile seçer;
+OLED, LCD ve 5G modellerinin paylaştığı yalnızca SMBIOS'tan oluşan CHID'ler `microsoft,denali-oled`'i
+seçer ([testler](#testler) iki durumu da hesaplıyor). Surface firmware'inin EDID'i stub'a verip
+vermediği **henüz doğrulanmadı**. Vermiyorsa canlı oturum OLED tree'siyle açılır. PR #18276 bunun bu
+modelde ne yaptığını anlatıyor: LG paneli, parlaklık kontrolünü panelin yok saydığı Samsung OLED panel
+sürücüsüyle çalışır ve on çekirdeğin altısı cpufreq almaz. Yazarın LCD cihazı düzeltmeden önce bu
+şekilde kurulmuştu; bu, panelin yine de yandığını ve kurulum programının kullanılabilir kaldığını
+düşündürüyor (bir çıkarım; burada denenmedi). Kurulan sistem buna bağlı değil: kurulum programı
+tree'yi socinfo kimliğine göre sabitler.
+
+Panel karanlık kalırsa ya da canlı oturumu yine de LCD tree'siyle açmak isterseniz yedek yapıyı
+oluşturun. Canlı UKI'yi Omarchy'nin kendi çekirdeği, initrd'si ve stub'ıyla, LCD tree'si tek ve
+koşulsuz `.dtb` olacak şekilde yeniden kurar; 2026-11-08'de kurulum programına kadar gelen yaklaşım
+budur:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
+```
+
+## Bilinen açık konular
+
+- **Ön kamera:** Monologue'da listelenmiyor, libcamera'nın simple IPA'sıyla gri ve karanlık
+  ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)).
+- **Sağ hoparlör:** ikinci WSA884x amplifikatörü çalma sırasında hataya düşüyor
+  ([omarchy #18383](https://github.com/omacom/omarchy/issues/18383)).
+- **Flex Keyboard Bluetooth eşleştirmesi ve Slim Pen eşleştirmesi** upstream'de LCD modelde test
+  edilmedi.
+- **KVM ve hazırda bekletme** bu makinede yok.
+- **Direct Boot** upstream'den kaldırıldı. *Reset Computer* artık *Remove > Factory Reset*: kök
+  subvolume'u kurulum anındaki anlık görüntüyle değiştirir ve `/home`'u yeniden oluşturur; bu yüzden
+  sonrasında `/var/lib/sp11-lcd` ve sensör yapılandırması gider. `setup.sh`'i bellekten ya da diğer
+  kopyanızdan yeniden çalıştırın.
+- **Kurulum sırasında socinfo:** kurulum programı LCD tree'sini yalnızca kendisi çalışırken
+  `/sys/devices/soc0/soc_id` 615 okuyorsa sabitler (socinfo bir modül); yoksa OLED tree'si
+  sabitlenir. Temiz kurulumda doğrulanmadı; yukarıdaki ilk açılış kontrolleri bunu yakalar.
+- **Wi-Fi board verisi:** bkz. [contrib/README.md](contrib/README.md#2-linux-firmware-has-an-exact-wi-fi-board-record-now).
+
+## Windows arşivi
+
+`build-iso.ps1`, yönetici hakkı olmadan, `C:\Windows\System32\DriverStore\FileRepository` içinde
+INF'inin `[Version]` bölümü sağlayıcı olarak Surface, Qualcomm ya da Dolby diyen her paketi
+kopyalar. Bu makinede bu 202 paket, 1104 dosya, 1,3 GB ediyor. Hepsini almak, Linux araçlarının
+hangilerini okuyacağını tahmin etmekten hem basit hem güvenli. İçinde şunlar var:
+
+| Ne | Sürücü paketleri | Linux'ta okuyan |
+|---|---|---|
+| Işık sensörü yapılandırması | `surfacepro_snscfgcrd8380` | `surface-pro-11-sensors-extract` (bugün) |
+| ADSP, CDSP, GPU ve video firmware'i, pil yöneticisi yapılandırması | `surfacepro_ext_adsp8380`, `qcnspmcdm_ext_cdsp8380`, `qcdx8380` (`qcvss8380.mbn`, `qcdxkmsuc8380.mbn`) | `qcom-firmware-extract -d` (Omarchy'nin firmware paketi aynı dosyaları taşıyor, bkz. [Testler](#testler)) |
+| Dolby hoparlör ayarı (`AUCD_DEV_0C29_SUBSYS_MSHW0486_REV_0D_ADCM_SUBSYS_MSHW0486.xml`) | `dax3_ext_qc` | hoparlör limitleyicisinin üretildiği `/usr/lib/surface-pro-11-support/dolby2pipewire.py` |
+| Kamera sensörü ve ISP ayarları | `surfacecam*8380`, `qccam*8380` | henüz hiçbir şey; ön kamera renk çalışması (omarchy-pkgs #3105) |
+| Wi-Fi board verisi (`bdwlan*`, `regdb.bin`), Bluetooth firmware'i ve NVM | `qcwlanhmt8380`, `qcbluetooth8380` | henüz hiçbir şey; bu Surface'in kendi kalibrasyonu, ileride bir board-2.bin kaydı için |
+| Dokunmatik, kalem, klavye, UEFI, SAM ve retimer firmware'i | `surfacetouchpen*`, `surfacetypecover*`, `surface_uefi*`, `surfacesam`, `surfaceretimer*` | hiçbir şey; kayıt için saklanıyor |
+
+`device-facts.json` SMBIOS alanlarını, firmware bileşen sürümlerini, SoC'yi, panelin EDID kimliğini
+(`LGD077b`), Wi-Fi, Bluetooth ve ses kimliklerini (`AUCD\VEN_QCOM&DEV_0C29&SUBSYS_MSHW0486&REV_0D`),
+Windows'un kullandığı Wi-Fi ve Bluetooth adreslerini ve bunlardan çıkan `MacAddressEmulationAddress`'i
+kaydeder (Wi-Fi + 2 = Bluetooth + 1, `microsoft-surface-snapdragon-addresses`'in okuduğu düzen; UEFI
+değişkeninin kendisini Windows'ta okumak yönetici hakkı ister). İçinde kurtarma anahtarı, ürün
+anahtarı, seri numarası ya da hesap bilgisi yok. `SHA256SUMS` her dosyayı listeler.
 
 ## Nasıl çalışır
 
 | Dosya | Görev |
 |---|---|
-| `build-iso.ps1` | Windows tarafı: ISO'yu indirir, sp11-lcd'yi firmware ve sensör yapılandırmasıyla DriverStore'dan hazırlar, paketleri çeker, konteyneri çalıştırır |
-| `build/fetch-packages.sh` | Omarchy'nin Surface Pro 11 paketlerini ve eksik bağımlılıklarını, imzalarıyla, resmi hedef imajın içinde pacman çalıştırarak çözer ve indirir |
-| `build/Dockerfile` | arm64 Debian araç kutusu (ukify, xorriso, squashfs-tools, gnupg) |
-| `build/remaster.sh` | İmzayı doğrular. Canlı UKI'yi kendi çekirdeği, initrd'si ve canlı sistemin systemd-stub'ı (262.1) ile, LCD tree'si tek `.dtb` olacak şekilde yeniden kurar. ISO'yu volume tarihleri ve UUID korunarak paketler, sonra her adımı doğrular |
-| `build/uki-dtb.py` | UKI bölümlerini ayırır ve "bu UKI hangi tree ile açılır" kontrolünü yapar (bağımlılıksız; ISO'da ve kurulu sistemde de kullanılır) |
-| `payload/sp11-lcd/finish-install.sh` | Canlı USB'den kurulu sistemi açar, bağlar ve `apply.sh`'i chroot içinde çalıştırır |
-| `payload/sp11-lcd/apply.sh` | Cihaz kontrolü (panel EDID'i LGD mi), tree sabitleme, initramfs, Surface Pro 11 paketleri, firmware, Wi-Fi board verisi, yeniden derleme, UKI doğrulama ve firmware boot sırası |
-| `payload/sp11-lcd/sp11-lcd-ungate`, `90-sp11-lcd-ungate.hook` | pacman kancası: destek ve sensör paketlerinin her kurulum/güncellemeden sonra `-oled` yerine `microsoft,denali` ile çalışmasını sağlar |
-| `payload/sp11-lcd/sp11-lcd-update`, `sp11-lcd-post-update` | Beş paketi edge'deki sürümlere getirir (`pacman -U` ile URL'den, imza doğrulamalı); Omarchy'nin `post-update` kancasından ya da elle çalışır |
-| `payload/sp11-lcd/extract-ath12k-board.py` | Omarchy'nin MIT lisanslı board kaydı çıkarıcısının değiştirilmemiş kopyası |
-| `payload/sp11-lcd/sp11-lcd-devicetree` | `/etc/boot/hooks/pre.d/90-…`: her UKI derlemesinden önce `uki.conf` dosyasında LCD tree'sini sabitler |
-| `payload/sp11-lcd/zz-sp11-lcd.conf` | initramfs modülleri (yalnızca çekirdekte bulunanlar, `?` kullanmadan) |
-| `tools/sp11-chid.ps1` | Bu cihazın systemd CHID'lerini hesaplar ve hangi tree'nin seçileceğini gösterir |
-| `test/chroot-test.ps1`, `test/chroot-test.sh` | `build-iso.ps1`'den sonra çalıştırılır. Hazırlanan düzeltmeyi resmi hedef kök imajında (copy-on-write) uygular. Tree sabitlemesini, hedef çekirdek için üretilen initramfs'i, imza doğrulamalı çevrimdışı paket kurulumunu ve kilidin açılmasını, sensör çıkarımını, LCD device tree'sine göre firmware'i, Wi-Fi board kaydını ve `limine-mkinitcpio`'nun derlediği şekilde üretilen UKI'yi kontrol eder |
-| `test/fstab-test.sh` | `finish-install.sh`'in fstab işleyişinin birim testi (Omarchy ISO ve genfstab biçimleri) |
+| `build-iso.ps1` | Windows tarafı: edge ISO'sunu alır (nightly, `latest.json`'a göre doğrulanır, ya da `-Iso`), `sp11-lcd/`'yi sürücü arşivi ve cihaz bilgileriyle hazırlar, remaster'ı çalıştırır, kaynak bilgisini yazar |
+| `build/Dockerfile` | Remaster için Debian araç kutusu (xorriso, ukify, squashfs-tools) |
+| `build/remaster.sh` | Volume UUID'si, tarihleri ve boot kayıtları korunarak `/sp11-lcd`'yi ekler; `LCD_ONLY_UKI=1` ile canlı UKI'yi `systemd-stub-omarchy` üzerinde yalnızca LCD tree'siyle yeniden kurar (bütün GRUB girdileri bu tek dosyayı açar, 256 MiB sınırı); değiştirdiği ve değiştirmediği her şeyi doğrular |
+| `build/uki-dtb.py` | UKI bölümlerini ayırır ve bir UKI'nin hangi tree ile açılacağını kontrol eder |
+| `build/edge/build-edge-iso.sh` | Edge ISO'sunu omarchy-iso'nun kendi `omarchy-iso-make --arch aarch64 --edge` komutuyla yerelde oluşturur |
+| `build/edge/verify-edge-iso.sh` | Bir edge ISO'sunun LCD model için ne taşıdığını açmadan kontrol eder: GRUB, `.dtbauto` ve `.hwids`, initramfs modülleri, paketler, kurulum programının LCD dalı |
+| `build/edge/hwids.py` | Bir UKI'nin `.hwids` bölümünü okur ve systemd-stub'ın panel EDID'iyle ve EDID'siz hangi tree'yi seçeceğini hesaplar |
+| `build/edge/Dockerfile` | Doğrulama ve testler için Arch Linux ARM araç kutusu (omarchy-iso'nun derleme imajı) |
+| `payload/sp11-lcd/setup.sh`, `README.md` | ISO'ya giderler; kurulum sonrası adım |
+| `tools/sp11-chid.ps1` | Bu makinenin systemd CHID'lerini Windows'ta hesaplar ve bir hwids JSON'uyla karşılaştırır |
+| `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | Konteyner testi |
+| `contrib/` | Upstream adayları |
 
-## Upstream'e gönderilebilecekler
-- **systemd:** `x1p64100-microsoft-denali.json` (`microsoft,denali-lcd`). EDID panel CHID'leri
-  (LGD077B) daha öncelikli olduğu için LCD modeli otomatik ayırt edilebilir.
-- **Omarchy:** `install/hardware/microsoft/surface-pro-11.sh` dosyasına `denali-lcd` desteği
-  (LCD tree'si ve `panel-edp`).
-- **omarchy-pkgs:** `microsoft-surface-pro-11-support` ve `-sensors` kontrolleri `microsoft,denali-oled` yerine
-  `microsoft,denali` üzerinden yapılmalı.
+## Testler
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\test\edge-test.ps1 -BaseIso <edge ISO> [-Iso <çıktı>]
+```
+
+Test iki ISO'yu ve edge hedef kök imajını (overlay olarak; hiçbirine yazılmaz) ayrıcalıklı bir
+konteynerde bağlar ve şunları kontrol eder:
+
+1. Çıktı tabanla aynı şekilde açılır: volume UUID'si ve tarihleri, El Torito ve GPT kayıtları,
+   GRUB'lu EFI boot bölümü bayt bayt, `grub.cfg`, tabanın her dosyası değişmeden (`-LcdOnlyUki` ile
+   canlı UKI hariç hepsi) ve ortamın kendi sağlama toplamları (`omarchy-root.img.zst.sha256`,
+   `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
+2. `/sp11-lcd`'de reponun `setup.sh` ve `README.md` dosyaları ve eksiksiz bir `windows/` var.
+3. Varsayılan yapı: canlı UKI Omarchy'nin kendisi ve `build/edge/verify-edge-iso.sh` çıktı üzerinde
+   geçiyor. Yedek yapı: `uki-dtb.py check` geçiyor; çekirdek, initrd, os-release ve uname Omarchy'ninkiyle
+   bayt bayt aynı; `.cmdline` ya da `.dtbauto` yok; 256 MiB içinde.
+4. `setup.sh`, bağlanmış ISO'dan, edge hedef kök imajının içinde, imajın kendi
+   `x1p64100-microsoft-denali.dtb`'si çalışan tree ve socinfo kimliği 615 olarak iki kez çalıştırılıyor:
+   arşiv `/var/lib/sp11-lcd/windows`'a yalnızca root'a açık ve eksiksiz iniyor, sensör yapılandırması
+   oradan çıkarılıyor. Başka bir makinenin tree'sinde çalışmayı reddediyor.
+5. Burada yazan bilgiler: Omarchy'nin `microsoft-surface-pro-11-firmware` paketi bu makinenin sürücü
+   deposuyla dosya dosya; `contrib/`'deki CHID'ler Omarchy'ninkilerle ve `device-facts.json` ile.
+
+2026-11-20 sonuçları, `omarchy-2026.11.20-aarch64-edge.iso`'ya karşı (omarchy-iso `acf0d36` ve
+omarchy `b20d787` ile yerel derleme; nightly 2026.11.20.497'nin commit'leri): sondaki
+[Test sonuçları](#test-sonuçları) bölümünde.
+
+## 2026-11-20'de ne değişti
+
+2026-11-19'a kadar bu repo imzalı stable 4.5.0 ISO'sunu yeniden paketliyor ve kurulan sistemi ilk
+açılıştan önce USB'den düzeltiyordu: LCD tree sabitlemesi ve onu koruyan bir pre.d kancası, initramfs
+modülleri, paketlerin yalnızca OLED'i kabul eden kontrollerini yeniden yazan bir pacman kancası,
+edge'den USB'ye çekilen Omarchy Surface Pro 11 paketleri ve yalnızca bu beşini edge'de tutan bir
+güncelleyici, Wi-Fi board kaydı ve sürücü deposundan DSP/GPU firmware'i. Omarchy'nin edge kanalı artık
+bunların hepsini kendisi yapıyor (yukarıda) ve "stable artı beş edge paketi" tasarımı artık çalışmıyor:
+support 1-9, edge'in `linux-firmware-qcom` 20261019-1.1 paketini istiyor. Stable çekirdek de artık LCD
+modelin ihtiyacı olan her şeyi taşımıyor: LCD tree'sinin PWM arka ışığı ve devre dışı çekirdeklerinin
+çıkarılması edge'deki `linux-omarchy-dtbs` 7.3-52'de. Eski betikler git geçmişinde (`5c4807d` ve öncesi).
 
 ## Kaynaklar
-- [omacom/omarchy](https://github.com/omacom/omarchy) (v4.5.0 ve quattro dalı), [omarchy-iso](https://github.com/omacom/omarchy-iso), [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs)
+
+- [omacom/omarchy](https://github.com/omacom/omarchy) (PR #18276), [omarchy-iso](https://github.com/omacom/omarchy-iso)
+  (quattro, `acf0d36`), [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) (#2378, #2379, #2382)
 - [Introducing Omarchy Dragon](https://omarchy.org/news/2026/09/introducing-omarchy-dragon/)
-- [qBitnaut/omarchy-dragon-sl7](https://github.com/qBitnaut/omarchy-dragon-sl7): Surface Laptop 7 (X1P-64-100). Initramfs ve "upstream tehlikeleri" listesi.
-- [harrisonvanderbyl/surface-pro-12-inch-linux](https://github.com/harrisonvanderbyl/surface-pro-12-inch-linux), [bprendie/omarchy-snapdragon](https://github.com/bprendie/omarchy-snapdragon), [javon27/omarchy-surface-touch](https://github.com/javon27/omarchy-surface-touch)
-- Linux `arch/arm64/boot/dts/qcom/x1p64100-microsoft-denali.dts` (Dale Whinham), systemd `src/boot/{stub,pe,chid,devicetree}.c`
+- [qBitnaut/omarchy-dragon-sl7](https://github.com/qBitnaut/omarchy-dragon-sl7): Surface Laptop 7 (X1P-64-100)
+- Linux `arch/arm64/boot/dts/qcom/x1p64100-microsoft-denali.dts` (Dale Whinham), systemd `src/boot/{stub,chid,devicetree,edid}.c`
+
+## Test sonuçları
+
+2026-11-20, taban `omarchy-2026.11.20-aarch64-edge.iso` (SHA256 `3754d075…26878612`), bu Surface'teki
+Docker Desktop'ta:
+
+| Yapı | Sonuç |
+|---|---|
+| Varsayılan: `omarchy-2026.11.20-aarch64-edge-sp11-lcd.iso`, 9.878.634.496 bayt, SHA256 `b111cc9f…20320c175` | 38 kontrol geçti, hiçbiri başarısız olmadı; bunlardan biri çıktı üzerinde kendi 16 kontrolüyle `verify-edge-iso.sh` |
+| `-LcdOnlyUki`: `omarchy-2026.11.20-aarch64-edge-sp11-lcd-fallback.iso`, 9.854.517.248 bayt (oluşturuldu, test edildi, sonra disk alanı için silindi) | 43 kontrol geçti, hiçbiri başarısız olmadı (testin EFI bölümü kontrolü olmayan önceki sürümüyle); yeniden kurulan canlı UKI 225.617.408 bayt |
+
+Belgelerin dayandığı bulgular:
+
+- `microsoft-surface-pro-11-firmware` 20261102-3'ün 11 dosyasının hepsi bu makinenin sürücü
+  deposundaki kopyalarla bayt bayt aynı: `qcadsp8380.mbn`, `adsp_dtb.mbn` (`adsp_dtbs.elf`),
+  `adspr.jsn`, `adsps.jsn`, `adspua.jsn`, `battmgr.jsn`, `qccdsp8380.mbn`, `cdsp_dtb.mbn`
+  (`cdsp_dtbs.elf`), `cdspr.jsn`, `qcvss8380.mbn`, `qcdxkmsuc8380.mbn`.
+- Bu makinenin ışık sensörü dosyaları, `surface-pro-11-sensors-extract`'ın doğruladığı özetlere sahip.
+- `device-facts.json`'dan hesaplandığında systemd-stub, panelin EDID'i varken CHID EXTRA+2 ile
+  `microsoft,denali-lcd`'yi, yokken CHID 3 ile `microsoft,denali-oled`'i seçiyor.
+- Kök imajdaki `board-2.bin` (`linux-firmware-atheros` 20261019-1), destek paketinin `board.bin`'inin
+  (Qualcomm'un 3378/255 referans kaydı) yanında, bu Wi-Fi kartı için birebir bir
+  `subsystem-device=1107`, board-id 255 kaydı taşıyor.
+
+Test edilmeyenler: Surface'in kendisinde hiçbir şey; ISO'dan kurulum; nightly indirmesi (2026-11-20'de
+`latest.json` okundu, ISO HEAD isteğine onun verdiği boyutla yanıt verdi ve `.sha256` dosyası aynı
+SHA256'yı gösteriyor, ama 8,5 GB'lık ISO indirilmedi); Omarchy'nin `surface-pro-11.sh`'i, okunarak
+kontrol ediliyor, çalıştırılmıyor.

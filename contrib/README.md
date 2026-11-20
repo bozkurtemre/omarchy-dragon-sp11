@@ -1,48 +1,51 @@
 # Upstream contributions
 
-Three changes that make the Surface Pro 11 LCD (Snapdragon X Plus) a first-class citizen upstream,
-so that this repository's fix becomes unnecessary. All three are prepared here; **none is opened
-yet**: every check they relax was put there by its maintainers because only the OLED model had been
-tested, and the evidence they need is a hardware test on this LCD unit. Open them, in this order,
-once `README.md`'s first-boot checks pass.
+What is still worth sending upstream from this Surface Pro 11 LCD (Snapdragon X Plus X1P64100,
+panel `LGD077b`). Nothing here is opened yet. The two patches this folder held until 2026-11-19, for
+omarchy and omarchy-pkgs, are superseded by omarchy PR #18276 and omarchy-pkgs #2378, #2379 and #2382
+and were removed; they are in the git history.
 
-## 1. omarchy-pkgs: `omarchy-pkgs-surface-pro-11-lcd.patch`
+## 1. systemd: `systemd-x1p64100-microsoft-denali.json`
 
-`microsoft-surface-pro-11-support` and `-sensors` check for `microsoft,denali-oled`; the patch
-checks for `microsoft,denali`, which both models carry, and says so in the READMEs and `pkgdesc`.
-The fixtures in `test.sh` carry `microsoft,denali` as their second compatible, so the tests pass
-unchanged.
+For `src/boot/hwids/aa64/x1p64100-microsoft-denali.json`, beside systemd's
+`x1e80100-microsoft-denali.json` (the OLED model). The OLED, LCD and 5G models share every SMBIOS
+field, so systemd's own entry sends all of them to `microsoft,denali-oled`. This entry carries only
+the three CHIDs that include the panel's EDID ID, systemd's extra types `EXTRA_CHID_BASE + 0..2`
+(manufacturer + family + product name + panel, manufacturer + family + panel, manufacturer + SKU +
+panel), which `chid_match()` tries before any SMBIOS-only CHID. On the LCD model the stub then picks
+`microsoft,denali-lcd`; everywhere else it falls through to the OLED entry.
 
-Apply on the `quattro` branch: `git apply contrib/omarchy-pkgs-surface-pro-11-lcd.patch`.
+Provenance of the three GUIDs:
 
-Evidence to put in the PR: the sound card, speaker routing and digitizer nodes live in
-`x1-microsoft-denali.dtsi` (shared); this unit's Windows audio device is
-`VEN_QCOM&DEV_0C29&SUBSYS_MSHW0486&REV_0D`, the tuning the speaker limiter was generated from;
-`8380_crd_tcs3430_0.json` and `sns_surface_color.json` in its driver store have the hashes the
-sensors extract script qualified; and the hardware test results (speakers, microphones, touch, pen,
-auto brightness, Flex Keyboard pairing, suspend).
+- Omarchy already ships the same file, byte for byte, in `linux-omarchy-dtbs` 7.3-52
+  (`/usr/lib/systemd/boot/hwids/aa64/linux-omarchy/`), and its live UKI's `.hwids` carries the three
+  CHIDs.
+- `tools/sp11-chid.ps1 -HwidsJson contrib/systemd-x1p64100-microsoft-denali.json -Panel LGD077B`
+  computes them on this machine from its SMBIOS fields, and `build/edge/hwids.py` computes them from
+  the `device-facts.json` the build records (`test/edge-test.sh` checks both).
+- The panel ID is `LGD077b`: systemd writes the EDID product code as lowercase hex. This folder's
+  first version used `LGD077B`, which gives three other GUIDs that match nothing; that was wrong.
 
-## 2. omarchy: `omarchy-surface-pro-11-lcd.patch`
+Before opening: on the installed system, `systemd-analyze chid` must list the three GUIDs among its
+EDID-based CHIDs, and the live session must have come up with `/proc/device-tree/model` reading
+"(LCD)" on Omarchy's unmodified live UKI. That second check is also the open question in the main
+README ("If the live session runs the OLED tree"): it shows whether the Surface firmware hands
+systemd-stub the panel's EDID at all. If it does not, this entry cannot work on this hardware and
+should not be sent.
 
-`install/hardware/microsoft/surface-pro-11.sh` matches the OLED or the LCD tree, pins the matching
-`.dtb` (`x1p64100-microsoft-denali.dtb` on the LCD) and early-loads `panel_edp` next to the OLED's
-Samsung panel driver. A bare `microsoft,denali` (neither model) is still left alone.
-`test/shell.d/surface-pro-11-hardware-test.sh` gains an LCD fixture that fails on the base branch.
+## 2. linux-firmware has an exact Wi-Fi board record now
 
-Apply on the `quattro` branch: `git apply contrib/omarchy-surface-pro-11-lcd.patch`, then run
-`bash test/shell.d/surface-pro-11-hardware-test.sh >/tmp/sp11.log 2>&1` as a non-root user.
+The WCN7850 in every Snapdragon Surface reports subsystem `17cb:1107` and board-id 255, which
+linux-firmware's `ath12k/WCN7850/hw2.0/board-2.bin` did not list, so `microsoft-surface-pro-11-support`
+ships Qualcomm's reference-design record (`subsystem-device=3378`, board-id 255) as `board.bin`.
+linux-firmware commit `575bbe3f` (tag 20261019) added an exact
+`bus=pci,vendor=17cb,device=1107,subsystem-vendor=17cb,subsystem-device=1107,qmi-chip-id=2,qmi-board-id=255`
+record, and the edge root image's `linux-firmware-atheros` 20261019-1 carries it (checked by
+`build/edge/verify-edge-iso.sh`, section 6). ath12k prefers an exact `board-2.bin` match over
+`board.bin`, so on edge the package's `board.bin` should no longer be read.
 
-## 3. systemd: `systemd-x1p64100-microsoft-denali.json`
-
-`src/boot/hwids/aa64/x1p64100-microsoft-denali.json`. The OLED, LCD and X Plus models share every
-SMBIOS field, so an entry built from SMBIOS CHIDs would be ambiguous. This one carries only the
-three EDID-panel CHIDs (systemd's extra types `EXTRA_CHID_BASE + 0..2`: manufacturer + family +
-product + panel, manufacturer + family + panel, manufacturer + SKU + panel) for this unit's panel
-`LGD077B`, which `chid_match()` tries before any SMBIOS-only CHID, so the stub picks the LCD tree on
-the LCD and falls through to the OLED entry elsewhere. Computed by `tools/sp11-chid.ps1` from this
-machine's SMBIOS fields and the panel's EDID ID.
-
-Verify on the installed system before opening: `systemd-analyze chid` prints the CHIDs the real
-code computes, including the EDID ones (type letter `E`); the three GUIDs above must appear. Then a
-boot test: a UKI with both Denali trees as `.dtbauto` and a `.hwids` section built from systemd's
-`aa64/` plus this file must come up with `/proc/device-tree/model` reading "(LCD)".
+For omarchy-pkgs, once Wi-Fi is confirmed on hardware (`sudo dmesg | grep -i 'ath12k.*board'` names
+the file it loaded): the support package's README says to drop its board data "once linux-firmware
+carries a Surface Pro 11 entry". Whether the new record is Surface calibration or another reference
+board is not known; this machine's own Windows board files (`bdwlan*` in `qcwlanhmt8380`) are in the
+USB's driver archive for that comparison.

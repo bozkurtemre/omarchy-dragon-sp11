@@ -2,190 +2,328 @@
 
 **English** | [Türkçe](README.tr.md)
 
-A thin layer on top of the official Omarchy aarch64 ISO for installing [Omarchy](https://omarchy.org) 4.5
-on the **Microsoft Surface Pro 11, LCD / Snapdragon X Plus (X1P64100)** model.
+[Omarchy](https://omarchy.org) on the **Microsoft Surface Pro 11, LCD / Snapdragon X Plus (X1P64100,
+`microsoft,denali-lcd`)**, from Omarchy's own aarch64 **edge** ISO, plus the one thing upstream cannot
+ship: this machine's own Windows files, which a full-disk install erases.
 
-The official, signed ISO gets exactly two additions:
+> **Status, 2026-11-20:** nothing has been booted on hardware with the edge ISO yet. A trial boot of
+> this repository's earlier, 4.5.0-based ISO reached the installer on the LCD panel on 2026-11-08.
+> The ISO built here passes the container tests below; results from the Surface will be added here.
 
-1. The live UKI boots with the LCD model's device tree.
-2. An `sp11-lcd/` fix, run once after installation, makes the installed system boot with the right
-   device tree, initramfs and firmware, and installs Omarchy's Surface Pro 11 packages (sound, touch
-   and pen, light sensor, Bluetooth) from the USB.
+## What Omarchy does now
 
-The kernel, packages and installer are Omarchy's own. Nothing is rebuilt and no foreign packages are
-added: the Surface Pro 11 packages are Omarchy's signed packages from its edge repository; only those
-five follow edge (through a hook in `omarchy-update`) and everything else stays on stable. See
-[docs/full-hardware-support.md](docs/full-hardware-support.md) for the options that were weighed.
+The LCD model is supported upstream, on the edge channel only (stable and rc are still 4.5.0-3, and
+no release newer than 4.5.0 exists):
 
-> **Status:** the ISO builds and passes its automatic checks, and the `sp11-lcd` fix passes every check
-> inside the official ISO's target root image (`test/`). It has not been installed on real hardware
-> yet; results will be added here.
+- **omarchy [PR #18276](https://github.com/omacom/omarchy/pull/18276)** by Iván Ruiz (rdereparadores),
+  merged 2026-11-11 (`b19ad9764d78`): `install/hardware/microsoft/surface-pro-11.sh` matches any
+  Surface Pro 11 (`microsoft,denali`), pins `x1p64100-microsoft-denali.dtb` in the UKI when
+  `/sys/devices/soc0/soc_id` is 615 (X1P-64-100), loads `panel_edp`, `pwm_bl` and `leds_qcom_lpg`
+  in the initramfs so the disk unlock prompt reaches the panel, and installs the Surface Pro 11
+  packages (`microsoft-surface-pro-11-support`, `iptsd`, `microsoft-surface-pro-11-sensors`).
+- **omarchy-pkgs #2378, #2379, #2382**, by the same author: the sensors and support packages act
+  on `microsoft,denali`, both models' shared compatible; in the kernel package the LCD tree gained
+  its PWM backlight and dropped the cores the X1P-64-100 has fused off, and LCD hwids
+  (`x1p64100-microsoft-denali.json`) came with it, so systemd-stub can pick the LCD tree by the
+  panel's EDID.
+  Edge carries them today as `linux-omarchy` 7.3-73 and `linux-omarchy-dtbs` 7.3-52.
+- **Tested by the author on an LCD unit:** brightness, ten cores with cpufreq, sound, sleep and the
+  disk unlock prompt (PR #18276); Wi-Fi, Bluetooth, speakers and microphones, both cameras, the
+  Surface Pro Keyboard's keyboard and touchpad, touch and pen, also after resume (omarchy-pkgs
+  #2379). **Not tested there:** a fresh install from the ISO on the LCD model, Flex Keyboard
+  Bluetooth pairing, Slim Pen pairing.
 
-## Why is this needed?
+Everything this repository used to work around (device tree pin, initramfs modules, the OLED-only
+package checks, packages from edge on a stable system, Wi-Fi board data, DSP and GPU firmware) is
+now done by the edge installer and its packages. See [What changed](#what-changed-on-2026-11-20).
 
-Omarchy 4.5.0 officially supports Snapdragon. Its kernel (`linux-omarchy` 7.3) carries many Surface
-Pro 11 patches, and the LCD model's device tree (`x1p64100-microsoft-denali.dtb`) is already on the
-ISO. Five problems remain on this model:
+## What this repository adds
 
-| Problem | Evidence | What this repo does |
-|---|---|---|
-| systemd-stub loads the **OLED** device tree on every Surface Pro 11. The OLED, LCD and X Plus models report the same SMBIOS identity, and systemd's `hwids` entry knows only `microsoft,denali-oled`. A matching `.dtbauto` wins over a plain `.dtb` (systemd `src/boot/stub.c`). | `tools/sp11-chid.ps1`: this machine's CHIDs 3, 4, 5, 6, 7, 8, 9 and 10 match the OLED entry, and the stub picks OLED through CHID 3. | Both the live UKI and the installed UKI carry the LCD tree as their only, unconditional `.dtb`. A pre.d hook keeps it that way on every rebuild. |
-| 4.5.0 has no Surface Pro 11 setup. The keyboard (`surface_aggregator`, `surface_hid`), display (`msm`, `panel-edp`, eDP PHY) and pmic_glink drivers are all modules, so the disk unlock prompt may have no keyboard or no picture. | `modules.order` on the ISO | Adds Omarchy's Surface Pro 11 module list from the quattro branch to the initramfs, with the LCD's panel driver. |
-| DSP/GPU firmware is either missing from the stable repo or extractable only from the Windows partition, which BitLocker makes unreadable. | no `microsoft-surface-pro-11-*` packages in the stable aarch64 repo | Puts this device's signed files from the Windows driver store on the ISO and installs them with Omarchy's own `qcom-firmware-extract -d`. |
-| No Wi-Fi: the Surface's WCN7850 reports generic IDs (subsystem `17cb:1107`, board-id 255) that match no `board-2.bin` entry. | Omarchy's `microsoft-surface-pro-11-support` PKGBUILD says so for the Surface Pro 11; the Surface Laptop 7 port hits the same card and ID | Installs Qualcomm's reference-design record as `board.bin`, with the same record, size and SHA256 Omarchy's package uses. ath12k reads it only when `board-2.bin` has no exact match. |
-| `ENABLE_UKI`, initramfs and firmware failures can go unnoticed. | the Surface Laptop 7 project's experience | `apply.sh` reads the UKI that will boot, down to its bytes, and reports "safe to reboot" only when that check passes. |
+1. **`/sp11-lcd/` on the ISO**, the only change to Omarchy's edge ISO by default:
+   - `windows/`: every driver package in this machine's Windows driver store whose INF names
+     Surface, Qualcomm or Dolby as its provider (202 packages, 1104 files, 1.3 GB here), with
+     `device-facts.json` and a `SHA256SUMS` manifest. See [The Windows archive](#the-windows-archive).
+   - `setup.sh`, run once after the first boot: it copies the archive to
+     `/var/lib/sp11-lcd/windows` (root only) and runs Omarchy's own
+     `surface-pro-11-sensors-extract -d` on it. The light sensor configuration is the one thing
+     upstream still reads from Windows (`DriverStore/.../surfacepro_snscfgcrd8380.inf_arm64_*`),
+     which a full-disk install erases and BitLocker hides.
+2. **`-LcdOnlyUki`, off by default:** rebuilds the live UKI with only the LCD tree, for the case
+   that the Surface firmware does not hand systemd-stub the panel's EDID. See
+   [If the live session runs the OLED tree](#if-the-live-session-runs-the-oled-tree).
+3. **[contrib/](contrib/README.md):** what is still worth sending upstream.
 
-## Verified on this device
+The kernel, packages and installer are Omarchy's own. Nothing is rebuilt and nothing is installed
+from elsewhere.
 
-| | |
-|---|---|
-| Model | Surface Pro 11th Edition, SKU `Surface_Pro_11th_Edition_2076`, UEFI 175.449.235 |
-| SoC | Snapdragon X Plus 10-core **X1P64100** |
-| Internal panel | **LGD077B** (LG LP129WT3 LCD), internal eDP (`0x80000000`); SAM7395 is an external monitor |
-| Wi-Fi | Qualcomm WCN7850 (FastConnect 7800), `17cb:1107`, subsystem `17cb:1107` |
-| Firmware | SHA256 of `qcadsp8380.mbn`, `adsp_dtbs.elf`, `qccdsp8380.mbn`, `cdsp_dtbs.elf`, `qcdxkmsuc8380.mbn` and `battmgr.jsn` is **identical** to Omarchy's `microsoft-surface-pro-11-firmware` package (Microsoft MSI 26.094.41119.0) |
-| Disk | SK hynix UFS 256 GB, GPT, BitLocker **on** |
-| ISO | `omarchy-4.5.0-aarch64.iso`: SHA256 and GPG signature verified (Omarchy key `40DF B630 FF42 BCFF B047 046C F013 4EE6 80CA C571`) |
+## Before you wipe Windows
+
+No script can do these for you:
+
+- **Finish Windows Update and every Surface firmware update.** Surface firmware (UEFI, and the
+  touch, pen and keyboard firmware) comes through Windows Update; Omarchy offers no way to update the
+  Surface UEFI.
+- **Make a Surface Recovery Image USB** from <https://support.microsoft.com/surface-recovery-image>
+  (needs the serial number, on the kickstand or in *Settings > System > About*). It is the way back
+  to Windows, and to firmware updates.
+- **Back up your personal data** and save the **BitLocker recovery key**
+  (<https://aka.ms/myrecoverykey>).
+- **Build the ISO while Windows is still there** (below): the archive is copied from this Windows
+  installation.
+- **Keep one more copy off the machine.** After the install, the USB stick and
+  `/var/lib/sp11-lcd/windows` are the only copies of these files. Copy the ISO, or the staged
+  `%USERPROFILE%\sp11-omarchy-build\payload\sp11-lcd` folder, to another disk or your own cloud
+  storage. It holds Microsoft, Qualcomm and Dolby files for this device: keep it private.
 
 ## Installation
 
-### 0. Prepare Windows
-- Install every Windows Update and Surface firmware update. The Surface UEFI updates only through Windows.
-- Save the **BitLocker recovery key** (<https://aka.ms/myrecoverykey>). Windows will ask for it once
-  Secure Boot is turned off.
-- **To keep Windows (recommended):**
-  1. Turn BitLocker off under *Settings → Privacy & security → Device encryption*. Decryption can
-     take hours. Omarchy's "free space" install does not work while BitLocker is on.
-  2. Shrink C: in *Disk Management*. 80–120 GB is recommended; 157 GB is free right now.
-- Get a **USB-C stick** of at least 16 GB. The ISO is 6.1 GB.
-
-### 0.5 Reconnaissance boot (recommended, before anything irreversible)
-Before decrypting BitLocker or shrinking C:, boot the stick once just to the live desktop:
-- In an admin PowerShell, run `Suspend-BitLocker -MountPoint 'C:' -RebootCount 0` first, so Windows
-  doesn't ask for the recovery key after Secure Boot is turned off. Run `Resume-BitLocker -MountPoint 'C:'`
-  when you are back in Windows.
-- Follow steps 1–4 below up to the live desktop, without installing. Check the picture, the keyboard and
-  the touchpad, and run `tr -d '\0' </proc/device-tree/model` (it should say "(LCD)").
-- Wi-Fi, sound and the battery can't be judged here: the live system has no Wi-Fi firmware and keeps
-  the DSP off.
-
 ### 1. Build the ISO (on this Surface, in Windows)
+
 With Docker Desktop running:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-iso.ps1
 ```
 
-The result is `%USERPROFILE%\sp11-omarchy-build\out\omarchy-4.5.0-aarch64-sp11-lcd.iso`.
-The script verifies the official ISO's signature first. At the end it checks the volume UUID, the
-boot records and the LCD-only UKI, and stops if any of them is wrong.
+- The base is the official edge nightly named in
+  <https://nightly.omarchy.org/edge-aarch64/latest.json> (8.5 GB, downloaded once into
+  `%USERPROFILE%\sp11-omarchy-build\dl`). The script checks its size and SHA256 against
+  `latest.json` and the `.sha256` file. **Edge ISOs carry no release signature**: the checksum
+  proves an intact download from Omarchy's server, not who built it. To use an ISO you built
+  yourself with [build/edge/build-edge-iso.sh](build/edge/build-edge-iso.sh), pass `-Iso <path>`.
+- The result is `%USERPROFILE%\sp11-omarchy-build\out\<base name>-sp11-lcd.iso` (about 9.9 GB),
+  with `.sha256` and `.provenance.txt` (base version, `iso_commit`, `omarchy_version`, kernel,
+  checksums) next to it. In all it needs about 20 GB (the 8.5 GB download, the 1.3 GB archive and
+  the result), and the script stops before it would leave less than 8 GB free.
+- At the end it checks that the volume UUID, dates, boot records, GRUB menu and live UKI are the
+  base ISO's and that `/sp11-lcd` matches what was staged, file for file.
 
-### 2. Write it to the USB stick
-Use the ARM64 build of [Rufus](https://rufus.ie) in **DD image mode**. Don't use Ventoy: the ISO
-boots through GRUB → UKI and finds itself by its volume UUID.
+### 2. Write it to a USB stick
 
-### 3. Surface UEFI settings
-- With the Surface off, hold **Volume Up + Power** to enter the UEFI.
-- Set *Security → Secure Boot* to **Disabled**.
-- Move USB to the top under *Boot configuration*, or start from USB with **Volume Down + Power**.
+At least 16 GB. Use the ARM64 build of [Rufus](https://rufus.ie) in **DD image mode**. Don't use
+Ventoy: the ISO boots through GRUB and a UKI and finds itself by its volume UUID.
 
-### 4. Boot from USB and install
-- GRUB detects the Snapdragon and opens the "device tree" entry by itself. 1–3 minutes of black screen is normal.
-- Battery percentage and sound don't work in the live session (the DSP is off on purpose). That is not a bug.
-- In the installer, pick **Free space install** if you keep Windows. Leave disk encryption on.
+### 3. Trial boot (recommended, before anything irreversible)
 
-### 5. Before rebooting: `sp11-lcd`
-When the installer says it is done, **do not reboot**. The live USB has no Wi-Fi, which is why the
-packages travel on the USB:
+1. In an admin PowerShell: `Suspend-BitLocker -MountPoint 'C:' -RebootCount 0`, so Windows does
+   not ask for the recovery key after Secure Boot is turned off.
+2. Surface off, hold **Volume Up + Power** for the UEFI. Set *Security > Secure Boot* to
+   **Disabled**. Start from USB with **Volume Down + Power**, or move USB to the top of
+   *Boot configuration*.
+3. GRUB picks the "device tree" entry on a Snapdragon by itself; a minute or more of black screen
+   is normal. The live session opens Omarchy's installer directly. Don't install yet.
+4. **Ctrl+Alt+F2** opens a console; log in as `root` (no password). Check:
+   ```
+   tr -d '\0' </proc/device-tree/model; echo   # Microsoft Surface Pro 11th Edition (LCD)
+   cat /sys/devices/soc0/soc_id                 # 615
+   cd /run/archiso/bootmnt/sp11-lcd/windows && sha256sum --quiet -c SHA256SUMS && echo archive ok
+   ```
+   The last line proves the archive on this stick is readable and complete while Windows still
+   exists (`findmnt -n -o TARGET /run/archiso/bootmnt` shows the medium if the path differs).
+   Also check the picture, the keyboard and the touchpad. If the model says "(OLED)", see
+   [below](#if-the-live-session-runs-the-oled-tree).
+5. Back in Windows: `Resume-BitLocker -MountPoint 'C:'`.
 
-```
-Ctrl+Alt+F2  →  root (no password)
-bash /run/archiso/bootmnt/sp11-lcd/finish-install.sh
-```
+### 4. Install
 
-Enter your disk password. When it prints `It is safe to reboot.`, type `reboot` and pull the USB
-stick once the screen goes black. Details are in `payload/sp11-lcd/README.md`.
+- **Full-disk install** (erases Windows): pick the whole disk in the installer. Omarchy's Surface
+  Pro 11 step then finds no Windows to read the light sensor configuration from; `setup.sh`
+  provides it after the first boot.
+- **Dual boot:** Omarchy's free-space install needs BitLocker turned off (*Settings > Privacy &
+  security > Device encryption*; decryption takes hours) and free space made by shrinking C: in
+  *Disk Management*. Omarchy then reads the sensor configuration from Windows itself; `setup.sh`
+  is still the way to keep the archive.
+- Leave **Secure Boot off**. Keep disk encryption on.
 
-### 6. Checks on first boot
+### 5. First boot
+
+Mount the stick and run `setup.sh` once (details in [payload/sp11-lcd/README.md](payload/sp11-lcd/README.md)):
 
 ```bash
-tr -d '\0' </proc/device-tree/model; echo        # "Microsoft Surface Pro 11th Edition (LCD)"
-sudo dmesg | grep -iE 'remoteproc|ath12k|msm_dpu' | head -30
-qcom-firmware-extract --list-missing             # must print nothing
-systemctl status 'iptsd@*' surface-pro-11-sensors   # touch/pen and light sensor services
-wpctl status | grep -A3 Sinks                    # "Internal speakers" must be the default sink
-bluetoothctl show | grep -E 'Controller|Powered' # a public address, not 00:00:00:00:00:00
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt    # lsblk -f shows the label
+sudo bash /mnt/sp11-lcd/setup.sh
+sudo umount /mnt
 ```
 
-If you kept Windows, add it to Limine with `sudo limine-scan`. **Don't** use *Setup → Direct Boot*
-on a Surface: the Surface UEFI drops custom EFI boot entries.
+Then check:
 
-## Sound, touch, sensors and Bluetooth
+```bash
+tr -d '\0' </proc/device-tree/model; echo           # Microsoft Surface Pro 11th Edition (LCD)
+cat /sys/devices/soc0/soc_id                         # 615
+grep -A2 'BEGIN OMARCHY SURFACE PRO 11' /etc/kernel/uki.conf   # DeviceTree=.../x1p64100-microsoft-denali.dtb
+omarchy-channel-current                              # edge
+systemctl status surface-pro-11-sensors              # active (light sensor)
+wpctl status | grep -A3 Sinks                        # "Internal speakers" is the default sink
+bluetoothctl show | grep -E 'Controller|Powered'     # a real address, not 00:00:00:00:00:00
+sudo jq .addresses /var/lib/sp11-lcd/windows/device-facts.json   # the addresses Windows used
+qcom-firmware-extract --list-missing                 # prints nothing
+```
 
-Omarchy's Surface Pro 11 packages exist only on its edge repository and check for the OLED model's
-device tree. `apply.sh` installs them from the USB (`sp11-lcd/pkgs/`, fetched at ISO build time by
-pacman inside the official target image, with signatures), replaces the `microsoft,denali-oled` check
-with the shared `microsoft,denali` through a pacman hook that reruns on every update, and extracts the
-light sensor's configuration from this machine's Windows driver store (`sp11-lcd/sensors/`). The stable
-channel does not carry these packages, and pacman cannot list edge beside stable (a repository's
-database is named after its section; Omarchy serves only `omarchy.db`), so `sp11-lcd-update` reads
-edge's database and installs newer versions of just these packages with `pacman -U` by URL, signature
-verified. Omarchy's `post-update` hook runs it after every `omarchy-update`.
+If the model says "(OLED)" or `uki.conf` names `x1e80100-microsoft-denali-oled.dtb`, the installer
+did not see socinfo ID 615 (see open issues). PR #18276's migration is written for exactly that
+case (not tried here): run
+`OMARCHY_PATH=/usr/share/omarchy bash /usr/share/omarchy/migrations/1794228778.sh` as your user (it
+asks for sudo, reruns the Surface Pro 11 setup and rebuilds the UKI), then reboot.
 
-| Package | Gives |
-|---|---|
-| `microsoft-surface-pro-11-support` | Speaker topology and UCM, speaker protection (a limiter rebuilt from this unit's Dolby tuning `MSHW0486 REV_0D`), Wi-Fi board data, Flex Keyboard and Slim Pen Bluetooth pairing, sleep hooks |
-| `iptsd` | Touchscreen and pen |
-| `microsoft-surface-pro-11-sensors` | Ambient light sensor (auto brightness) through the ADSP |
-| `microsoft-surface-snapdragon-addresses` | Bluetooth public address and a stable Wi-Fi MAC; without it the WCN7850 stays an unconfigured Bluetooth controller |
-| `microsoft-surface-pro-11-firmware` | The DSP/GPU firmware, from Microsoft's MSI (identical to the driver store copies) |
+### The installed system follows the edge channel
 
-Why this is expected to fit the LCD model: the sound card node, the speaker routing and the digitizer are
-in the device tree both models share, this unit's audio tuning ID and sensor configuration hashes match
-what Omarchy qualified on the OLED unit, and every Surface Pro 11 kernel patch is already in the stable
-kernel. Don't turn sound on with other UCM settings; the limiter is the only speaker protection.
+The edge ISO installs `omarchy-dev` and Omarchy's edge repositories, so `omarchy-update` brings
+edge's daily builds of Omarchy, the kernel and the Surface packages, before they go through a
+release: keep the Snapper snapshots Omarchy takes, and read the update output. **Don't switch to
+stable** (`omarchy-channel-set stable`) until a stable
+release newer than 4.5.0 contains PR #18276 and the packages above: 4.5.0 has no Surface Pro 11
+setup at all.
 
-## Known gaps and open questions
+## If the live session runs the OLED tree
 
-- **Wi-Fi board data:** `board.bin` is Qualcomm's reference calibration, not this Surface's own, as on
-  Omarchy's OLED setup. `sudo dmesg | grep ath12k` shows the board-id the card asks for.
-- **Edge packages on a stable system:** if edge rebuilds one of the five against a library the stable
-  mirror does not have yet, `omarchy-update` reports a dependency error for it until the stable mirror
-  catches up (at most a month). Nothing else is affected.
-- Boot entries of Snapper snapshots taken before the fix may start the old UKI, and with it the OLED tree.
-- *Setup → Reset Computer* restores the installer's baseline snapshot, which predates the fix: rerun
-  `apply.sh` from the USB stick afterwards.
+The live UKI carries every Snapdragon tree as `.dtbauto` and systemd's `.hwids`. systemd-stub
+picks the LCD tree only through the three CHIDs that include the panel's EDID ID (`LGD077b`); the
+SMBIOS-only CHIDs, which the OLED, LCD and 5G models share, pick `microsoft,denali-oled` (the
+[tests](#tests) compute both cases). Whether the Surface firmware gives the stub the EDID is
+**not verified yet**. If it does not, the live session runs the OLED tree. PR #18276 describes what
+that does on this model: the LG panel runs under the Samsung OLED panel driver, whose brightness
+control it ignores, and six of the ten cores get no cpufreq. Its author's LCD unit was installed
+that way before the fix, which suggests the panel still lights up and the installer stays usable
+(an inference; not tried here). The installed system does not depend on it: the installer pins the
+tree by socinfo ID.
+
+If the panel stays dark, or to run the live session on the LCD tree anyway, build the fallback. It
+rebuilds the live UKI from Omarchy's own kernel, initrd and stub with the LCD tree as its only,
+unconditional `.dtb`, the approach that reached the installer on 2026-11-08:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
+```
+
+## Known open issues
+
+- **Front camera:** not listed in Monologue, and grey and dark under libcamera's simple IPA
+  ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)).
+- **Right speaker:** the second WSA884x amplifier faults during playback
+  ([omarchy #18383](https://github.com/omacom/omarchy/issues/18383)).
+- **Flex Keyboard Bluetooth pairing and Slim Pen pairing** are untested upstream on the LCD model.
+- **KVM and hibernation** are not available on this machine.
+- **Direct Boot** was removed upstream. *Reset Computer* is now *Remove > Factory Reset*: it swaps
+  the root subvolume for the install-time snapshot and recreates `/home`, so
+  `/var/lib/sp11-lcd` and the sensor configuration are gone afterwards. Run `setup.sh` again from
+  the stick or your other copy.
+- **socinfo at install time:** the installer pins the LCD tree only if `/sys/devices/soc0/soc_id`
+  reads 615 while it runs (socinfo is a module); without it the OLED tree is pinned. Not verified
+  on a fresh install; the first-boot checks above detect it.
+- **Wi-Fi board data:** see [contrib/README.md](contrib/README.md#2-linux-firmware-has-an-exact-wi-fi-board-record-now).
+
+## The Windows archive
+
+`build-iso.ps1` copies, without administrator rights, every package in
+`C:\Windows\System32\DriverStore\FileRepository` whose INF `[Version]` names Surface, Qualcomm or
+Dolby as its provider. On this machine that is 202 packages, 1104 files, 1.3 GB. Taking them all is
+simpler and safer than guessing which ones Linux tooling will read. It includes:
+
+| What | Driver packages | Read on Linux by |
+|---|---|---|
+| Light sensor configuration | `surfacepro_snscfgcrd8380` | `surface-pro-11-sensors-extract` (today) |
+| ADSP, CDSP, GPU and video firmware, battery manager config | `surfacepro_ext_adsp8380`, `qcnspmcdm_ext_cdsp8380`, `qcdx8380` (`qcvss8380.mbn`, `qcdxkmsuc8380.mbn`) | `qcom-firmware-extract -d` (Omarchy's firmware package carries the same files, see [Tests](#tests)) |
+| Dolby speaker tuning (`AUCD_DEV_0C29_SUBSYS_MSHW0486_REV_0D_ADCM_SUBSYS_MSHW0486.xml`) | `dax3_ext_qc` | `/usr/lib/surface-pro-11-support/dolby2pipewire.py`, which the speaker limiter was generated from |
+| Camera sensor and ISP tuning | `surfacecam*8380`, `qccam*8380` | nothing yet; front camera colour work (omarchy-pkgs #3105) |
+| Wi-Fi board data (`bdwlan*`, `regdb.bin`), Bluetooth firmware and NVM | `qcwlanhmt8380`, `qcbluetooth8380` | nothing yet; this Surface's own calibration, for a future board-2.bin entry |
+| Touch, pen, keyboard, UEFI, SAM and retimer firmware | `surfacetouchpen*`, `surfacetypecover*`, `surface_uefi*`, `surfacesam`, `surfaceretimer*` | nothing; kept for the record |
+
+`device-facts.json` records the SMBIOS fields, firmware component versions, SoC, the panel's EDID ID
+(`LGD077b`), Wi-Fi, Bluetooth and audio IDs (`AUCD\VEN_QCOM&DEV_0C29&SUBSYS_MSHW0486&REV_0D`), the
+Wi-Fi and Bluetooth addresses Windows used, and the `MacAddressEmulationAddress` they imply
+(Wi-Fi + 2 = Bluetooth + 1, the layout `microsoft-surface-snapdragon-addresses` reads; the UEFI
+variable itself needs administrator rights to read on Windows). It holds no recovery key, product
+key, serial number or account data. `SHA256SUMS` lists every file.
 
 ## How it works
 
 | File | Role |
 |---|---|
-| `build-iso.ps1` | Windows side: downloads the ISO, stages sp11-lcd with the firmware and sensor configuration from the driver store, fetches the packages, runs the container |
-| `build/fetch-packages.sh` | Resolves and downloads Omarchy's Surface Pro 11 packages and their missing dependencies, with signatures, by running pacman inside the official target image |
-| `build/Dockerfile` | arm64 Debian toolbox (ukify, xorriso, squashfs-tools, gnupg) |
-| `build/remaster.sh` | Verifies the signature. Rebuilds the live UKI from its own kernel and initrd and the live system's systemd-stub (262.1), with the LCD tree as its only `.dtb`. Repacks the ISO with the volume dates and UUID kept, then verifies every step |
-| `build/uki-dtb.py` | Splits UKI sections and answers "which tree does this UKI boot" (no dependencies; also used on the ISO and the installed system) |
-| `payload/sp11-lcd/finish-install.sh` | From the live USB: unlocks and mounts the installed system, runs `apply.sh` in a chroot |
-| `payload/sp11-lcd/apply.sh` | Device check (is the panel EDID LGD), tree pin, initramfs, Surface Pro 11 packages, firmware, Wi-Fi board data, rebuild, UKI verification, firmware boot order |
-| `payload/sp11-lcd/sp11-lcd-ungate`, `90-sp11-lcd-ungate.hook` | pacman hook: lets the support and sensors packages act on `microsoft,denali` instead of `-oled` after every install or update |
-| `payload/sp11-lcd/sp11-lcd-update`, `sp11-lcd-post-update` | Bring the five packages up to edge's versions (`pacman -U` by URL, signatures verified); run from Omarchy's `post-update` hook or by hand |
-| `payload/sp11-lcd/extract-ath12k-board.py` | Unmodified copy of Omarchy's MIT-licensed board record extractor |
-| `payload/sp11-lcd/sp11-lcd-devicetree` | `/etc/boot/hooks/pre.d/90-…`: pins the LCD tree in `uki.conf` before every UKI build |
-| `payload/sp11-lcd/zz-sp11-lcd.conf` | initramfs modules (only those the kernel has, without `?`) |
-| `tools/sp11-chid.ps1` | Computes this device's systemd CHIDs and shows which tree would be picked |
-| `test/chroot-test.ps1`, `test/chroot-test.sh` | Run after `build-iso.ps1`: applies the staged fix inside the official target root image (copy-on-write) and checks the tree pin, the initramfs built for the target kernel, the offline package install with signature verification and the ungating, the sensor extraction, firmware against the LCD device tree, the Wi-Fi board record, and the UKI built the way `limine-mkinitcpio` builds it |
-| `test/fstab-test.sh` | Unit test of `finish-install.sh`'s fstab handling, for the Omarchy ISO's and genfstab's fstab formats |
+| `build-iso.ps1` | Windows side: gets the edge ISO (nightly, checked against `latest.json`, or `-Iso`), stages `sp11-lcd/` with the driver archive and device facts, runs the remaster, writes provenance |
+| `build/Dockerfile` | Debian toolbox for the remaster (xorriso, ukify, squashfs-tools) |
+| `build/remaster.sh` | Adds `/sp11-lcd` keeping the volume UUID, dates and boot records; with `LCD_ONLY_UKI=1` rebuilds the live UKI on `systemd-stub-omarchy` with only the LCD tree (all GRUB entries chainload that one file, 256 MiB limit); verifies everything it changed and did not change |
+| `build/uki-dtb.py` | Splits UKI sections and checks which tree a UKI boots |
+| `build/edge/build-edge-iso.sh` | Builds the edge ISO locally with omarchy-iso's own `omarchy-iso-make --arch aarch64 --edge` |
+| `build/edge/verify-edge-iso.sh` | Checks, without booting, what an edge ISO carries for the LCD model: GRUB, `.dtbauto` and `.hwids`, initramfs modules, packages, the installer's LCD branch |
+| `build/edge/hwids.py` | Reads a UKI's `.hwids` and computes which tree systemd-stub picks, with and without the panel's EDID |
+| `build/edge/Dockerfile` | Arch Linux ARM toolbox (omarchy-iso's build image) for the verification and the tests |
+| `payload/sp11-lcd/setup.sh`, `README.md` | Go onto the ISO; the post-install step |
+| `tools/sp11-chid.ps1` | Computes this machine's systemd CHIDs on Windows and matches them against a hwids JSON |
+| `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | The container test |
+| `contrib/` | Upstream candidates |
 
-## Upstream candidates
-- **omarchy-pkgs:** `microsoft-surface-pro-11-support` and `-sensors` should check `microsoft,denali`,
-  not `microsoft,denali-oled` (11 files). That makes the ungate hook here a no-op.
-- **Omarchy:** `denali-lcd` support in `install/hardware/microsoft/surface-pro-11.sh` (LCD tree and `panel-edp`).
-- **systemd:** `x1p64100-microsoft-denali.json` (`microsoft,denali-lcd`). The EDID panel CHIDs
-  (LGD077B) have higher priority, so the LCD model could be told apart automatically.
+## Tests
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\test\edge-test.ps1 -BaseIso <edge ISO> [-Iso <result>]
+```
+
+The test mounts both ISOs and the edge target root image (as an overlay; nothing is written to
+any of them) in a privileged container and checks:
+
+1. The result boots like the base: volume UUID and dates, El Torito and GPT records, the EFI boot
+   partition with GRUB byte for byte, `grub.cfg`, every base file unchanged (with `-LcdOnlyUki`,
+   every one but the live UKI), and the medium's own checksums (`omarchy-root.img.zst.sha256`,
+   `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
+2. `/sp11-lcd` has the repository's `setup.sh` and `README.md` and a complete `windows/`.
+3. Default build: the live UKI is Omarchy's own and `build/edge/verify-edge-iso.sh` passes on the
+   result. Fallback build: `uki-dtb.py check` passes, kernel, initrd, os-release and uname are
+   byte-identical to Omarchy's, no `.cmdline` or `.dtbauto`, within 256 MiB.
+4. `setup.sh`, run twice from the mounted ISO inside the edge target root image, with the root
+   image's own `x1p64100-microsoft-denali.dtb` as the running tree and socinfo ID 615: the archive
+   lands root-only and intact in `/var/lib/sp11-lcd/windows`, and the sensor configuration is
+   extracted from it. It refuses another machine's tree.
+5. Facts stated here: Omarchy's `microsoft-surface-pro-11-firmware` against this machine's driver
+   store, file by file; `contrib/`'s CHIDs against Omarchy's and against `device-facts.json`.
+
+Results of 2026-11-20, against `omarchy-2026.11.20-aarch64-edge.iso` (a local build of omarchy-iso
+`acf0d36` with omarchy `b20d787`, the commits of nightly 2026.11.20.497): see
+[Test results](#test-results) at the end.
+
+## What changed on 2026-11-20
+
+Until 2026-11-19 this repository remastered the signed stable 4.5.0 ISO and fixed the installed
+system from the USB before its first boot: an LCD tree pin and a pre.d hook to keep it, initramfs
+modules, a pacman hook that rewrote the packages' OLED-only checks, Omarchy's Surface Pro 11
+packages fetched from edge onto the USB plus an updater that kept just those five on edge, the
+Wi-Fi board record, and DSP/GPU firmware from the driver store. Omarchy's edge channel now does all
+of that itself (above), and that "stable plus five edge packages" design no longer works: support
+1-9 needs edge's `linux-firmware-qcom` 20261019-1.1. The stable kernel no longer has everything the
+LCD model needs either: the LCD tree's PWM backlight and the removal of its fused-off cores are in
+`linux-omarchy-dtbs` 7.3-52 on edge. The old scripts are in the git history (commit `5c4807d` and earlier).
 
 ## Sources
-- [omacom/omarchy](https://github.com/omacom/omarchy) (v4.5.0 and the quattro branch), [omarchy-iso](https://github.com/omacom/omarchy-iso), [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs)
+
+- [omacom/omarchy](https://github.com/omacom/omarchy) (PR #18276), [omarchy-iso](https://github.com/omacom/omarchy-iso)
+  (quattro, `acf0d36`), [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) (#2378, #2379, #2382)
 - [Introducing Omarchy Dragon](https://omarchy.org/news/2026/09/introducing-omarchy-dragon/)
-- [qBitnaut/omarchy-dragon-sl7](https://github.com/qBitnaut/omarchy-dragon-sl7): Surface Laptop 7 (X1P-64-100); initramfs and "upstream hazards" list
-- [harrisonvanderbyl/surface-pro-12-inch-linux](https://github.com/harrisonvanderbyl/surface-pro-12-inch-linux), [bprendie/omarchy-snapdragon](https://github.com/bprendie/omarchy-snapdragon), [javon27/omarchy-surface-touch](https://github.com/javon27/omarchy-surface-touch)
-- Linux `arch/arm64/boot/dts/qcom/x1p64100-microsoft-denali.dts` (Dale Whinham), systemd `src/boot/{stub,pe,chid,devicetree}.c`
+- [qBitnaut/omarchy-dragon-sl7](https://github.com/qBitnaut/omarchy-dragon-sl7): Surface Laptop 7 (X1P-64-100)
+- Linux `arch/arm64/boot/dts/qcom/x1p64100-microsoft-denali.dts` (Dale Whinham), systemd `src/boot/{stub,chid,devicetree,edid}.c`
+
+## Test results
+
+2026-11-20, base `omarchy-2026.11.20-aarch64-edge.iso` (SHA256 `3754d075…26878612`), Docker Desktop
+on this Surface:
+
+| Build | Result |
+|---|---|
+| Default: `omarchy-2026.11.20-aarch64-edge-sp11-lcd.iso`, 9,878,634,496 bytes, SHA256 `b111cc9f…20320c175` | 38 checks passed, none failed, one of them `verify-edge-iso.sh` on the result with its own 16 |
+| `-LcdOnlyUki`: `omarchy-2026.11.20-aarch64-edge-sp11-lcd-fallback.iso`, 9,854,517,248 bytes (built, tested, then deleted for disk space) | 43 checks passed, none failed (an earlier version of the test, without the EFI partition check); the rebuilt live UKI is 225,617,408 bytes |
+
+What the docs rely on:
+
+- All 11 files of `microsoft-surface-pro-11-firmware` 20261102-3 are byte-identical to this
+  machine's driver store copies: `qcadsp8380.mbn`, `adsp_dtb.mbn` (`adsp_dtbs.elf`), `adspr.jsn`,
+  `adsps.jsn`, `adspua.jsn`, `battmgr.jsn`, `qccdsp8380.mbn`, `cdsp_dtb.mbn` (`cdsp_dtbs.elf`),
+  `cdspr.jsn`, `qcvss8380.mbn`, `qcdxkmsuc8380.mbn`.
+- This machine's light sensor files have the hashes `surface-pro-11-sensors-extract` qualified.
+- From `device-facts.json`, systemd-stub picks `microsoft,denali-lcd` through CHID EXTRA+2 when it
+  has the panel's EDID, and `microsoft,denali-oled` through CHID 3 when it has not.
+- The root image's `board-2.bin` (`linux-firmware-atheros` 20261019-1) has an exact
+  `subsystem-device=1107`, board-id 255 record for this Wi-Fi card, beside the support package's
+  `board.bin` (Qualcomm's 3378/255 reference record).
+
+Not tested: anything on the Surface itself; installing from the ISO; the nightly download (on
+2026-11-20 `latest.json` was read, the ISO answered a HEAD request with the size it gives and the
+`.sha256` file names the same SHA256, but the 8.5 GB ISO was not downloaded); Omarchy's
+`surface-pro-11.sh`, which is checked by reading it, not run.

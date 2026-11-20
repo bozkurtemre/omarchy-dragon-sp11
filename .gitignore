@@ -1,16 +1,17 @@
-# Third-party checkouts used for research (see README "Kaynaklar")
+# Third-party checkouts used for research
 /upstream/
 
-# Build outputs and anything carrying Microsoft/Qualcomm firmware.
+# Build outputs and anything carrying Microsoft, Qualcomm or Dolby files.
 # build-iso.ps1 keeps these under %USERPROFILE%\sp11-omarchy-build, but never commit them.
 *.iso
 *.iso.sha256
+*.iso.provenance.txt
 *.efi
 *.mbn
 *.elf
-firmware/
 
-# Staged by build-iso.ps1 next to the scripts: official packages and this machine's
-# Windows sensor configuration. They go on the ISO, never into git.
-pkgs/
-sensors/
+# Staged by build-iso.ps1 next to the scripts: this machine's Windows driver archive and
+# device facts. They go on the ISO, never into git.
+windows/
+device-facts.json
+SHA256SUMS
