@@ -9,6 +9,7 @@ only carries what a full-disk install erases with Windows.
 |---|---|
 | `setup.sh` | Run once on the installed system (below) |
 | `camera/` | Optional: `setup-camera.sh` makes both cameras usable by V4L2-only apps such as Monologue (needs network; [camera/README.md](camera/README.md)) |
+| `touchscreen/` | Optional: `setup-touchscreen.sh` makes the menu's *Disable Touchscreen* turn finger touch off (run as your user; [touchscreen/README.md](touchscreen/README.md)) |
 | `windows/FileRepository/` | Every driver package in this machine's Windows driver store whose INF names Surface, Qualcomm or Dolby as its provider: DSP, GPU and video firmware, the light sensor configuration, the Dolby speaker tuning, camera tuning, Wi-Fi and Bluetooth board data, touch, pen and UEFI firmware packages |
 | `windows/device-facts.json` | SMBIOS fields, firmware versions, SoC, the panel's EDID ID, Wi-Fi, Bluetooth and audio IDs, the Wi-Fi and Bluetooth addresses Windows used. No recovery key, product key, serial number or account data |
 | `windows/SHA256SUMS` | SHA256 of every file under `windows/` |

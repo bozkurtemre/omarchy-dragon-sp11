@@ -1,0 +1,57 @@
+#!/bin/bash
+# Enable, disable or toggle finger touch on the Surface Pro 11.
+#
+# Omarchy's touchscreen trigger turns off the first Hyprland touch device,
+# spi-045e:0c80-touchscreen. On this machine iptsd reads the touch data itself
+# and sends finger touch through iptsd-virtual-touchscreen-045e:0c80, so that
+# trigger changes nothing. This turns off every touch device; the pen (a tablet
+# device) keeps working.
+#
+# It keeps Omarchy's state file, so the menu shows the right entry and
+# default/hypr/disabled-input-device.lua disables the device again on every
+# Hyprland reload. That file holds one name: the iptsd device when present.
+#
+# Installed as ~/.local/bin/surface-touchscreen by setup-touchscreen.sh, which
+# points the menu's trigger.hardware.touchscreen-on/off entries at it.
+set -euo pipefail
+
+NAME_FILE="$HOME/.local/state/omarchy/toggles/hypr/touchscreen-disabled-name"
+
+mapfile -t devices < <(hyprctl devices -j | jq -r '.touch[]?.name')
+if ((${#devices[@]} == 0)); then
+  echo "No touchscreen device found" >&2
+  exit 1
+fi
+
+set_all() {
+  local name quoted
+  for name in "${devices[@]}"; do
+    quoted=${name//\\/\\\\}
+    quoted=${quoted//\"/\\\"}
+    hyprctl eval "hl.device({ name = \"$quoted\", enabled = $1 })" >/dev/null
+  done
+}
+
+enable() {
+  rm -f "$NAME_FILE"
+  set_all true
+  omarchy-osd -i touch -m "$(omarchy-i18n input.touchscreenEnabled)"
+}
+
+disable() {
+  local persist=${devices[0]} name
+  for name in "${devices[@]}"; do
+    [[ $name == iptsd-virtual-touchscreen* ]] && persist=$name
+  done
+  set_all false
+  mkdir -p "$(dirname "$NAME_FILE")"
+  printf '%s\n' "$persist" >"$NAME_FILE"
+  omarchy-osd -i touch -m "$(omarchy-i18n input.touchscreenDisabled)"
+}
+
+case "${1:-toggle}" in
+  on) enable ;;
+  off) disable ;;
+  toggle) if [[ -f $NAME_FILE ]]; then enable; else disable; fi ;;
+  *) echo "Usage: surface-touchscreen [on|off|toggle]" >&2; exit 1 ;;
+esac

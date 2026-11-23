@@ -90,7 +90,9 @@ step "2. /sp11-lcd"
 while IFS= read -r f; do
   cmp -s "$repo/payload/sp11-lcd/$f" "$mnt/out/sp11-lcd/$f" && ok "/sp11-lcd/$f is payload/sp11-lcd/$f" || bad "/sp11-lcd/$f differs from the repository"
 done < <(cd "$repo/payload/sp11-lcd" && find . -type f -printf '%P\n' | sort)
-bash -n "$mnt/out/sp11-lcd/camera/setup-camera.sh" && ok "camera/setup-camera.sh parses" || bad "camera/setup-camera.sh does not parse"
+for f in camera/setup-camera.sh touchscreen/setup-touchscreen.sh touchscreen/surface-touchscreen; do
+  bash -n "$mnt/out/sp11-lcd/$f" && ok "$f parses" || bad "$f does not parse"
+done
 win=$mnt/out/sp11-lcd/windows
 (cd "$win" && sha256sum --quiet -c SHA256SUMS) && ok "windows/: $(wc -l <"$win/SHA256SUMS") files match SHA256SUMS" || bad "windows/ does not match SHA256SUMS"
 [[ $(find "$win" -type f ! -name SHA256SUMS | wc -l) == $(wc -l <"$win/SHA256SUMS") ]] && ok "SHA256SUMS lists every file under windows/" || bad "files under windows/ that SHA256SUMS does not list"

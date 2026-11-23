@@ -51,6 +51,8 @@ now done by the edge installer and its packages. See [What changed](#what-change
    - `camera/setup-camera.sh`, opt-in: makes both cameras usable by V4L2-only apps (Monologue,
      Omarchy's screen recording webcam overlay) through on-demand v4l2loopback relays. See
      [payload/sp11-lcd/camera/README.md](payload/sp11-lcd/camera/README.md).
+   - `touchscreen/setup-touchscreen.sh`, opt-in: makes the menu's *Disable Touchscreen* turn
+     finger touch off. See [payload/sp11-lcd/touchscreen/README.md](payload/sp11-lcd/touchscreen/README.md).
 2. **`-LcdOnlyUki`, off by default:** rebuilds the live UKI with only the LCD tree, for the case
    that the Surface firmware does not hand systemd-stub the panel's EDID. See
    [If the live session runs the OLED tree](#if-the-live-session-runs-the-oled-tree).
@@ -177,6 +179,15 @@ sudo bash /mnt/sp11-lcd/camera/setup-camera.sh       # from your own account, no
 sudo umount /mnt
 ```
 
+For a working *Disable Touchscreen* trigger (optional; as your own user, without sudo;
+[details](payload/sp11-lcd/touchscreen/README.md)):
+
+```bash
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt
+bash /mnt/sp11-lcd/touchscreen/setup-touchscreen.sh
+sudo umount /mnt
+```
+
 ### The installed system follows the edge channel
 
 The edge ISO installs `omarchy-dev` and Omarchy's edge repositories, so `omarchy-update` brings
@@ -214,6 +225,9 @@ powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
   ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)). The opt-in
   [camera/setup-camera.sh](payload/sp11-lcd/camera/README.md) works around it. The picture is
   still dim and slightly green under libcamera's simple IPA.
+- **Disable Touchscreen does nothing:** Omarchy turns off the raw SPI touchscreen, but finger touch
+  comes through iptsd's virtual touchscreen. The opt-in
+  [touchscreen/setup-touchscreen.sh](payload/sp11-lcd/touchscreen/README.md) works around it.
 - **Right speaker:** the second WSA884x amplifier faults during playback
   ([omarchy #18383](https://github.com/omacom/omarchy/issues/18383)).
 - **Flex Keyboard Bluetooth pairing and Slim Pen pairing** are untested upstream on the LCD model.
@@ -264,6 +278,7 @@ key, serial number or account data. `SHA256SUMS` lists every file.
 | `build/edge/Dockerfile` | Arch Linux ARM toolbox (omarchy-iso's build image) for the verification and the tests |
 | `payload/sp11-lcd/setup.sh`, `README.md` | Go onto the ISO; the post-install step |
 | `payload/sp11-lcd/camera/` | Go onto the ISO; the opt-in camera relay: `setup-camera.sh`, the `v4l2-relayd-sp11` PKGBUILD and patch, the user service, v4l2loopback options and a WirePlumber rule |
+| `payload/sp11-lcd/touchscreen/` | Go onto the ISO; the opt-in touchscreen toggle: `setup-touchscreen.sh` and `surface-touchscreen` |
 | `tools/sp11-chid.ps1` | Computes this machine's systemd CHIDs on Windows and matches them against a hwids JSON |
 | `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | The container test |
 | `contrib/` | Upstream candidates |
@@ -282,9 +297,10 @@ any of them) in a privileged container and checks:
    every one but the live UKI), and the medium's own checksums (`omarchy-root.img.zst.sha256`,
    `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
 2. `/sp11-lcd` has every file of the repository's `payload/sp11-lcd/` (`setup.sh`, `README.md`,
-   `camera/`), `camera/setup-camera.sh` parses, and `windows/` is complete. `setup-camera.sh` needs
-   the network and a running session and is not run in the container; it was run on the Surface
-   (see [the camera README](payload/sp11-lcd/camera/README.md)).
+   `camera/`, `touchscreen/`), the scripts in `camera/` and `touchscreen/` parse, and `windows/` is
+   complete. `setup-camera.sh` and `setup-touchscreen.sh` need a running session and are not run
+   in the container; they were run on the Surface (see the
+   [camera](payload/sp11-lcd/camera/README.md) and [touchscreen](payload/sp11-lcd/touchscreen/README.md) READMEs).
 3. Default build: the live UKI is Omarchy's own and `build/edge/verify-edge-iso.sh` passes on the
    result. Fallback build: `uki-dtb.py check` passes, kernel, initrd, os-release and uname are
    byte-identical to Omarchy's, no `.cmdline` or `.dtbauto`, within 256 MiB.

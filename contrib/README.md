@@ -72,3 +72,17 @@ omarchy-pkgs #3244), because each one broke V4L2 capture through the relay:
 
 Before opening: try Monologue and `omarchy-capture-screenrecording --with-webcam` on screen. So far
 only ffmpeg has read the devices.
+
+## 4. omarchy: `omarchy-hw-touchscreen` picks a touchscreen that carries nothing
+
+`omarchy-hw-touchscreen` returns the first Hyprland touch device, and `omarchy-toggle-input-device`
+turns only that one off. On the Surface Pro 11 it is `spi-045e:0c80-touchscreen`, while finger
+touch comes through `iptsd-virtual-touchscreen-045e:0c80` (iptsd reads the touch data itself), so
+*Disable Touchscreen* changes nothing. Turning off only the iptsd device stops finger touch and
+keeps the pen. Other Surfaces that run iptsd probably behave the same; only this one was checked.
+
+A fix in omarchy: turn off every `.touch[]` device, and persist all their names, not one (the
+state file and `default/hypr/disabled-input-device.lua` hold a single name today). Or prefer an
+`iptsd-virtual-touchscreen*` device when there is one. Until then,
+[payload/sp11-lcd/touchscreen/](../payload/sp11-lcd/touchscreen/README.md) works around it from
+`~/.config` and `~/.local/bin`.
