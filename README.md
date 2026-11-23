@@ -51,6 +51,9 @@ now done by the edge installer and its packages. See [What changed](#what-change
    - `camera/setup-camera.sh`, opt-in: makes both cameras usable by V4L2-only apps (Monologue,
      Omarchy's screen recording webcam overlay) through on-demand v4l2loopback relays. See
      [payload/sp11-lcd/camera/README.md](payload/sp11-lcd/camera/README.md).
+   - `ir-camera/setup-ir-camera.sh`, opt-in, after the camera setup: makes the IR (Windows Hello)
+     camera `/dev/video42`, with the IR light on only while it streams, for face unlock such as
+     omaFace. See [payload/sp11-lcd/ir-camera/README.md](payload/sp11-lcd/ir-camera/README.md).
    - `touchscreen/setup-touchscreen.sh`, opt-in: makes the menu's *Disable Touchscreen* turn
      finger touch off. See [payload/sp11-lcd/touchscreen/README.md](payload/sp11-lcd/touchscreen/README.md).
 2. **`-LcdOnlyUki`, off by default:** rebuilds the live UKI with only the LCD tree, for the case
@@ -179,6 +182,14 @@ sudo bash /mnt/sp11-lcd/camera/setup-camera.sh       # from your own account, no
 sudo umount /mnt
 ```
 
+Then, for the IR camera (optional; [details](payload/sp11-lcd/ir-camera/README.md)):
+
+```bash
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt
+sudo bash /mnt/sp11-lcd/ir-camera/setup-ir-camera.sh
+sudo umount /mnt
+```
+
 For a working *Disable Touchscreen* trigger (optional; as your own user, without sudo;
 [details](payload/sp11-lcd/touchscreen/README.md)):
 
@@ -225,6 +236,9 @@ powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
   ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)). The opt-in
   [camera/setup-camera.sh](payload/sp11-lcd/camera/README.md) works around it. The picture is
   still dim and slightly green under libcamera's simple IPA.
+- **IR camera unused:** the IR sensor and light work, but the sensor is hidden from PipeWire and
+  has no plain V4L2 device, so face unlock finds no IR camera. The opt-in
+  [ir-camera/setup-ir-camera.sh](payload/sp11-lcd/ir-camera/README.md) provides one.
 - **Disable Touchscreen does nothing:** Omarchy turns off the raw SPI touchscreen, but finger touch
   comes through iptsd's virtual touchscreen. The opt-in
   [touchscreen/setup-touchscreen.sh](payload/sp11-lcd/touchscreen/README.md) works around it.
@@ -278,6 +292,7 @@ key, serial number or account data. `SHA256SUMS` lists every file.
 | `build/edge/Dockerfile` | Arch Linux ARM toolbox (omarchy-iso's build image) for the verification and the tests |
 | `payload/sp11-lcd/setup.sh`, `README.md` | Go onto the ISO; the post-install step |
 | `payload/sp11-lcd/camera/` | Go onto the ISO; the opt-in camera relay: `setup-camera.sh`, the `v4l2-relayd-sp11` PKGBUILD and patch, the user service, v4l2loopback options and a WirePlumber rule |
+| `payload/sp11-lcd/ir-camera/` | Go onto the ISO; the opt-in IR camera: `setup-ir-camera.sh`, the relay and IR light units, and the `surface-ir-emitter` watcher |
 | `payload/sp11-lcd/touchscreen/` | Go onto the ISO; the opt-in touchscreen toggle: `setup-touchscreen.sh` and `surface-touchscreen` |
 | `tools/sp11-chid.ps1` | Computes this machine's systemd CHIDs on Windows and matches them against a hwids JSON |
 | `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | The container test |
@@ -297,10 +312,10 @@ any of them) in a privileged container and checks:
    every one but the live UKI), and the medium's own checksums (`omarchy-root.img.zst.sha256`,
    `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
 2. `/sp11-lcd` has every file of the repository's `payload/sp11-lcd/` (`setup.sh`, `README.md`,
-   `camera/`, `touchscreen/`), the scripts in `camera/` and `touchscreen/` parse, and `windows/` is
-   complete. `setup-camera.sh` and `setup-touchscreen.sh` need a running session and are not run
-   in the container; they were run on the Surface (see the
-   [camera](payload/sp11-lcd/camera/README.md) and [touchscreen](payload/sp11-lcd/touchscreen/README.md) READMEs).
+   `camera/`, `ir-camera/`, `touchscreen/`), their scripts parse, and `windows/` is complete. The
+   setup scripts in those folders need a running system and are not run in the container; they
+   were run on the Surface (see the [camera](payload/sp11-lcd/camera/README.md),
+   [IR camera](payload/sp11-lcd/ir-camera/README.md) and [touchscreen](payload/sp11-lcd/touchscreen/README.md) READMEs).
 3. Default build: the live UKI is Omarchy's own and `build/edge/verify-edge-iso.sh` passes on the
    result. Fallback build: `uki-dtb.py check` passes, kernel, initrd, os-release and uname are
    byte-identical to Omarchy's, no `.cmdline` or `.dtbauto`, within 256 MiB.

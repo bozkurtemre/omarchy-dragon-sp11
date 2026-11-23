@@ -1,0 +1,27 @@
+[Unit]
+Description=Surface Pro 11 IR camera as a V4L2 device (/dev/video42)
+Documentation=https://github.com/bozkurtemre/omarchy-dragon-sp11/blob/main/payload/sp11-lcd/ir-camera/README.md
+After=systemd-modules-load.service systemd-udevd.service
+ConditionPathExists=/dev/video42
+
+[Service]
+Type=simple
+# A system service, not a user one: face unlock also scans at the login
+# screen, before any user session. libcamera is used directly; the Surface
+# package hides this sensor from PipeWire. The sensor streams only while a
+# V4L2 reader streams /dev/video42; otherwise a black frame is held.
+# 644x604 GRAY8 is the sensor's full frame, which V4L2 readers get as GREY.
+Environment=LIBCAMERA_LOG_LEVELS=*:ERROR
+ExecStart=/usr/bin/v4l2-relayd \
+  -i "libcamerasrc camera-name=/base/soc@0/cci@ac15000/i2c-bus@0/camera@60 ! video/x-raw,format=GRAY8,width=644,height=604 ! videorate skip-to-first=true" \
+  -o "appsrc name=appsrc caps=video/x-raw,format=GRAY8,width=644,height=604,framerate=30/1 max-buffers=2 leaky-type=downstream ! videoconvert ! v4l2sink name=v4l2sink device=/dev/video42 sync=false"
+# v4l2-relayd exits 0 when the device is busy.
+Restart=always
+RestartSec=2
+PrivateNetwork=yes
+ProtectHome=yes
+ProtectSystem=strict
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

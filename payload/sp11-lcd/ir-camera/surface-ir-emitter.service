@@ -1,0 +1,19 @@
+[Unit]
+Description=Surface Pro 11 IR light, on while the IR camera streams
+Documentation=https://github.com/bozkurtemre/omarchy-dragon-sp11/blob/main/payload/sp11-lcd/ir-camera/README.md
+After=surface-ir-camera.service
+BindsTo=surface-ir-camera.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/surface-pro-11-ir/surface-ir-emitter
+# Turns the light off on any exit, and again here should it be killed.
+ExecStopPost=/bin/sh -c 'echo 0 > /sys/class/leds/ir:flash/brightness'
+Restart=always
+RestartSec=2
+PrivateNetwork=yes
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=surface-ir-camera.service

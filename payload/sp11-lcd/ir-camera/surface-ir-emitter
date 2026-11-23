@@ -1,0 +1,149 @@
+#!/usr/bin/python3
+"""Switch the Surface Pro 11 IR light with the IR camera's stream.
+
+surface-ir-camera.service relays the IR sensor (vd55g0) into a v4l2loopback
+device. This watches that device's client-usage event, which v4l2loopback
+sends when a reader starts or stops streaming, and while a reader streams:
+
+  - turns the IR flood light (LED class device ir:flash) on, at a low level;
+  - lowers the sensor's own auto-exposure target. At its default it exposes
+    for the dark room, and the lit face is pure white.
+
+Both go back when the last reader stops, and the light goes off when this
+exits. Runs as root (system service): the LED and the sensor's controls are
+root-only, and face unlock also scans at the login screen, before any user
+session exists.
+"""
+
+import ctypes
+import fcntl
+import glob
+import os
+import select
+import signal
+import subprocess
+import sys
+import threading
+
+DEVICE = os.environ.get("IR_DEVICE", "/dev/video42")
+LED = os.environ.get("IR_LED", "/sys/class/leds/ir:flash/brightness")
+LED_LEVEL = os.environ.get("IR_LED_LEVEL", "40")
+SENSOR_NAME = os.environ.get("IR_SENSOR", "vd55g0")
+# auto_exposure_bias menu index: 6 is 0 EV, each step 0.5 EV; 2 is -2 EV.
+AE_BIAS = os.environ.get("IR_AE_BIAS", "2")
+AE_BIAS_DEFAULT = "6"
+
+V4L2_EVENT_PRIVATE_START = 0x08000000
+V4L2_EVENT_PRI_CLIENT_USAGE = V4L2_EVENT_PRIVATE_START + 0x08E00000 + 1
+V4L2_EVENT_SUB_FL_SEND_INITIAL = 1
+
+
+class Subscription(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_uint32), ("id", ctypes.c_uint32),
+                ("flags", ctypes.c_uint32), ("reserved", ctypes.c_uint32 * 5)]
+
+
+class Event(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_uint32), ("_pad", ctypes.c_uint32),
+                ("data", ctypes.c_uint8 * 64), ("pending", ctypes.c_uint32),
+                ("sequence", ctypes.c_uint32), ("timestamp", ctypes.c_int64 * 2),
+                ("id", ctypes.c_uint32), ("reserved", ctypes.c_uint32 * 8),
+                ("_tail", ctypes.c_uint32)]
+
+
+def ioc(direction, nr, size):
+    return (direction << 30) | (size << 16) | (ord("V") << 8) | nr
+
+
+VIDIOC_SUBSCRIBE_EVENT = ioc(1, 90, ctypes.sizeof(Subscription))
+VIDIOC_DQEVENT = ioc(2, 89, ctypes.sizeof(Event))
+assert ctypes.sizeof(Event) == 136, "struct v4l2_event layout changed"
+
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
+
+
+def sensor_subdev():
+    for name in glob.glob("/sys/class/video4linux/v4l-subdev*/name"):
+        with open(name) as f:
+            if f.read().startswith(SENSOR_NAME):
+                return "/dev/" + name.split("/")[-2]
+    return None
+
+
+def set_led(level):
+    try:
+        with open(LED, "w") as f:
+            f.write(level)
+    except OSError as e:
+        log(f"cannot set {LED}: {e}")
+
+
+def set_bias(index):
+    subdev = sensor_subdev()
+    if subdev is None:
+        log(f"no {SENSOR_NAME} subdevice")
+        return
+    r = subprocess.run(["v4l2-ctl", "-d", subdev, "-c", f"auto_exposure_bias={index}"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        log(f"v4l2-ctl on {subdev}: {r.stderr.strip()}")
+
+
+active = False
+generation = 0
+
+
+def start():
+    global active, generation
+    active = True
+    generation += 1
+    gen = generation
+    set_led(LED_LEVEL)
+    # libcamera configures the sensor once the relay's pipeline starts, a
+    # moment after the reader's STREAMON; set the bias after it, twice.
+    for delay in (0.4, 1.2):
+        threading.Timer(delay, lambda: active and generation == gen and set_bias(AE_BIAS)).start()
+    log("reader streaming: IR light on")
+
+
+def stop():
+    global active, generation
+    active = False
+    generation += 1
+    set_led("0")
+    set_bias(AE_BIAS_DEFAULT)
+    log("no reader: IR light off")
+
+
+def main():
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    fd = os.open(DEVICE, os.O_RDWR | os.O_NONBLOCK)
+    sub = Subscription(type=V4L2_EVENT_PRI_CLIENT_USAGE, flags=V4L2_EVENT_SUB_FL_SEND_INITIAL)
+    fcntl.ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, sub)
+    poller = select.poll()
+    poller.register(fd, select.POLLPRI)
+    log(f"watching {DEVICE}")
+    try:
+        while True:
+            for _ in poller.poll():
+                ev = Event()
+                try:
+                    fcntl.ioctl(fd, VIDIOC_DQEVENT, ev)
+                except OSError:
+                    continue
+                if ev.type != V4L2_EVENT_PRI_CLIENT_USAGE:
+                    continue
+                streaming = ev.data[0] != 0
+                if streaming and not active:
+                    start()
+                elif not streaming and active:
+                    stop()
+    finally:
+        set_led("0")
+        set_bias(AE_BIAS_DEFAULT)
+
+
+if __name__ == "__main__":
+    main()

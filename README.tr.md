@@ -55,6 +55,10 @@ DSP ve GPU firmware'i) artık edge kurulum programı ve paketleri tarafından ya
      (Monologue, Omarchy'nin ekran kaydındaki webcam overlay'i) talep üzerine çalışan v4l2loopback
      aktarımlarıyla kullanılabilir yapar. Bkz.
      [payload/sp11-lcd/camera/README.md](payload/sp11-lcd/camera/README.md) (İngilizce).
+   - `ir-camera/setup-ir-camera.sh`, isteğe bağlı, kamera kurulumundan sonra: IR (Windows Hello)
+     kamerasını `/dev/video42` olarak sunar, IR ışığı yalnızca görüntü alınırken yanar; omaFace
+     gibi yüzle kilit açma için. Bkz.
+     [payload/sp11-lcd/ir-camera/README.md](payload/sp11-lcd/ir-camera/README.md) (İngilizce).
    - `touchscreen/setup-touchscreen.sh`, isteğe bağlı: menüdeki *Disable Touchscreen*'in parmakla
      dokunmayı gerçekten kapatmasını sağlar. Bkz.
      [payload/sp11-lcd/touchscreen/README.md](payload/sp11-lcd/touchscreen/README.md) (İngilizce).
@@ -186,6 +190,14 @@ sudo bash /mnt/sp11-lcd/camera/setup-camera.sh       # root kabuğundan değil, 
 sudo umount /mnt
 ```
 
+Ardından IR kamera için (isteğe bağlı; [ayrıntılar](payload/sp11-lcd/ir-camera/README.md)):
+
+```bash
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt
+sudo bash /mnt/sp11-lcd/ir-camera/setup-ir-camera.sh
+sudo umount /mnt
+```
+
 *Disable Touchscreen* tetikleyicisinin çalışması için (isteğe bağlı; sudo olmadan, kendi
 kullanıcınızla; [ayrıntılar](payload/sp11-lcd/touchscreen/README.md)):
 
@@ -232,6 +244,9 @@ powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
   ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)). İsteğe bağlı
   [camera/setup-camera.sh](payload/sp11-lcd/camera/README.md) bunu aşar. Görüntü, libcamera'nın
   simple IPA'sıyla hâlâ loş ve hafif yeşil.
+- **IR kamera kullanılmıyor:** IR sensörü ve ışığı çalışıyor, ama sensör PipeWire'dan gizli ve
+  düz bir V4L2 cihazı yok; yüzle kilit açma IR kamera bulamıyor. İsteğe bağlı
+  [ir-camera/setup-ir-camera.sh](payload/sp11-lcd/ir-camera/README.md) bir tane sağlar.
 - **Disable Touchscreen işe yaramıyor:** Omarchy ham SPI dokunmatik ekranını kapatıyor, ama
   parmakla dokunma iptsd'nin sanal dokunmatik ekranından geliyor. İsteğe bağlı
   [touchscreen/setup-touchscreen.sh](payload/sp11-lcd/touchscreen/README.md) bunu aşar.
@@ -286,6 +301,7 @@ anahtarı, seri numarası ya da hesap bilgisi yok. `SHA256SUMS` her dosyayı lis
 | `build/edge/Dockerfile` | Doğrulama ve testler için Arch Linux ARM araç kutusu (omarchy-iso'nun derleme imajı) |
 | `payload/sp11-lcd/setup.sh`, `README.md` | ISO'ya giderler; kurulum sonrası adım |
 | `payload/sp11-lcd/camera/` | ISO'ya gider; isteğe bağlı kamera aktarımı: `setup-camera.sh`, `v4l2-relayd-sp11` PKGBUILD'i ve yaması, kullanıcı servisi, v4l2loopback seçenekleri ve bir WirePlumber kuralı |
+| `payload/sp11-lcd/ir-camera/` | ISO'ya gider; isteğe bağlı IR kamera: `setup-ir-camera.sh`, aktarım ve IR ışığı servisleri ve `surface-ir-emitter` izleyicisi |
 | `payload/sp11-lcd/touchscreen/` | ISO'ya gider; isteğe bağlı dokunmatik ekran anahtarı: `setup-touchscreen.sh` ve `surface-touchscreen` |
 | `tools/sp11-chid.ps1` | Bu makinenin systemd CHID'lerini Windows'ta hesaplar ve bir hwids JSON'uyla karşılaştırır |
 | `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | Konteyner testi |
@@ -305,10 +321,10 @@ konteynerde bağlar ve şunları kontrol eder:
    canlı UKI hariç hepsi) ve ortamın kendi sağlama toplamları (`omarchy-root.img.zst.sha256`,
    `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
 2. `/sp11-lcd`'de reponun `payload/sp11-lcd/` altındaki her dosyası (`setup.sh`, `README.md`,
-   `camera/`, `touchscreen/`) var, `camera/` ve `touchscreen/` altındaki betiklerin sözdizimi
-   geçerli ve `windows/` eksiksiz. `setup-camera.sh` ve `setup-touchscreen.sh` açık bir oturum
-   ister, konteynerde çalıştırılmaz; Surface üzerinde çalıştırıldılar (bkz.
-   [kamera](payload/sp11-lcd/camera/README.md) ve [dokunmatik ekran](payload/sp11-lcd/touchscreen/README.md) README'leri).
+   `camera/`, `ir-camera/`, `touchscreen/`) var, betiklerinin sözdizimi geçerli ve `windows/`
+   eksiksiz. Bu klasörlerdeki kurulum betikleri çalışan bir sistem ister, konteynerde
+   çalıştırılmaz; Surface üzerinde çalıştırıldılar (bkz. [kamera](payload/sp11-lcd/camera/README.md),
+   [IR kamera](payload/sp11-lcd/ir-camera/README.md) ve [dokunmatik ekran](payload/sp11-lcd/touchscreen/README.md) README'leri).
 3. Varsayılan yapı: canlı UKI Omarchy'nin kendisi ve `build/edge/verify-edge-iso.sh` çıktı üzerinde
    geçiyor. Yedek yapı: `uki-dtb.py check` geçiyor; çekirdek, initrd, os-release ve uname Omarchy'ninkiyle
    bayt bayt aynı; `.cmdline` ya da `.dtbauto` yok; 256 MiB içinde.

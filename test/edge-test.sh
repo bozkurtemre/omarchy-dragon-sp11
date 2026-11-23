@@ -90,9 +90,11 @@ step "2. /sp11-lcd"
 while IFS= read -r f; do
   cmp -s "$repo/payload/sp11-lcd/$f" "$mnt/out/sp11-lcd/$f" && ok "/sp11-lcd/$f is payload/sp11-lcd/$f" || bad "/sp11-lcd/$f differs from the repository"
 done < <(cd "$repo/payload/sp11-lcd" && find . -type f -printf '%P\n' | sort)
-for f in camera/setup-camera.sh touchscreen/setup-touchscreen.sh touchscreen/surface-touchscreen; do
+for f in camera/setup-camera.sh touchscreen/setup-touchscreen.sh touchscreen/surface-touchscreen ir-camera/setup-ir-camera.sh; do
   bash -n "$mnt/out/sp11-lcd/$f" && ok "$f parses" || bad "$f does not parse"
 done
+python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$mnt/out/sp11-lcd/ir-camera/surface-ir-emitter" &&
+  ok "ir-camera/surface-ir-emitter parses" || bad "ir-camera/surface-ir-emitter does not parse"
 win=$mnt/out/sp11-lcd/windows
 (cd "$win" && sha256sum --quiet -c SHA256SUMS) && ok "windows/: $(wc -l <"$win/SHA256SUMS") files match SHA256SUMS" || bad "windows/ does not match SHA256SUMS"
 [[ $(find "$win" -type f ! -name SHA256SUMS | wc -l) == $(wc -l <"$win/SHA256SUMS") ]] && ok "SHA256SUMS lists every file under windows/" || bad "files under windows/ that SHA256SUMS does not list"

@@ -17,6 +17,9 @@ v4l2loopback device, and only while an app has the device open.
 | `/dev/video40` | Surface Front Camera | `imx681` | `libcamera_input._base_soc_0_cci_ac16000_i2c-bus_1_camera_1a` |
 | `/dev/video41` | Surface Back Camera | `ov13858` | `libcamera_input._base_soc_0_cci_ac15000_i2c-bus_1_camera_10` |
 
+The module options also create `/dev/video42` for the IR camera, which
+[../ir-camera/](../ir-camera/README.md) feeds.
+
 This is opt-in. Unlike the rest of this repository, it builds one package that is not Omarchy's:
 `v4l2-relayd-sp11`, the AUR's `v4l2-relayd` 0.2.0 with one patch. Everything else comes from
 Omarchy's repositories.
