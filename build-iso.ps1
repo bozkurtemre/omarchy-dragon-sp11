@@ -12,7 +12,7 @@
      against the size and SHA256 that latest.json and the .sha256 file give, or the ISO given with
      -Iso (for example one built with build/edge/build-edge-iso.sh). Edge ISOs carry no release
      signature: the checksum proves an intact download, not who built it.
-  2. Stages sp11-lcd/: setup.sh and README.md from payload/, plus windows/: every driver package in
+  2. Stages sp11-lcd/: setup.sh, README.md and camera/ from payload/, plus windows/: every driver package in
      the Windows driver store whose INF names Surface, Qualcomm or Dolby as its provider,
      device-facts.json and a SHA256SUMS manifest. These are Microsoft, Qualcomm and Dolby files
      for this device only: they go onto the ISO, never into the git repository.

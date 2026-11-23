@@ -1,0 +1,25 @@
+[Unit]
+Description=Surface Pro 11 %i camera as a V4L2 device (relay from PipeWire)
+Documentation=https://github.com/bozkurtemre/omarchy-dragon-sp11/blob/main/payload/sp11-lcd/camera/README.md
+After=pipewire.service wireplumber.service
+Wants=wireplumber.service
+
+[Service]
+Type=simple
+# NODE: the PipeWire node.name of the libcamera source; DEVICE: its v4l2loopback
+# node (/etc/modprobe.d/surface-pro-11-cameras.conf). The camera streams only
+# while a V4L2 app has DEVICE open; otherwise a black splash frame is held.
+EnvironmentFile=/etc/surface-pro-11-cameras/%i.conf
+# do-timestamp and sync=false: libcamera buffers carry sensor timestamps, not
+# pipeline running time, and v4l2sink would drop nearly every frame as late.
+# videorate skip-to-first: no burst of stale duplicate frames on each open.
+# The leaky appsrc keeps memory bounded while no app is reading.
+ExecStart=/usr/bin/v4l2-relayd \
+  -i "pipewiresrc do-timestamp=true target-object=${NODE} ! video/x-raw,width=1280,height=720 ! videorate skip-to-first=true ! videoconvert" \
+  -o "appsrc name=appsrc caps=video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1 max-buffers=2 leaky-type=downstream ! videoconvert ! v4l2sink name=v4l2sink device=${DEVICE} sync=false"
+# v4l2-relayd exits 0 when the device is busy.
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

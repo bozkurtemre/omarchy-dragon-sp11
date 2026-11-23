@@ -48,13 +48,17 @@ now done by the edge installer and its packages. See [What changed](#what-change
      `surface-pro-11-sensors-extract -d` on it. The light sensor configuration is the one thing
      upstream still reads from Windows (`DriverStore/.../surfacepro_snscfgcrd8380.inf_arm64_*`),
      which a full-disk install erases and BitLocker hides.
+   - `camera/setup-camera.sh`, opt-in: makes both cameras usable by V4L2-only apps (Monologue,
+     Omarchy's screen recording webcam overlay) through on-demand v4l2loopback relays. See
+     [payload/sp11-lcd/camera/README.md](payload/sp11-lcd/camera/README.md).
 2. **`-LcdOnlyUki`, off by default:** rebuilds the live UKI with only the LCD tree, for the case
    that the Surface firmware does not hand systemd-stub the panel's EDID. See
    [If the live session runs the OLED tree](#if-the-live-session-runs-the-oled-tree).
 3. **[contrib/](contrib/README.md):** what is still worth sending upstream.
 
 The kernel, packages and installer are Omarchy's own. Nothing is rebuilt and nothing is installed
-from elsewhere.
+from elsewhere, except by the opt-in camera setup: it builds `v4l2-relayd-sp11` (the AUR's
+`v4l2-relayd` with one patch) on the installed system.
 
 ## Before you wipe Windows
 
@@ -165,6 +169,14 @@ case (not tried here): run
 `OMARCHY_PATH=/usr/share/omarchy bash /usr/share/omarchy/migrations/1794228778.sh` as your user (it
 asks for sudo, reruns the Surface Pro 11 setup and rebuilds the UKI), then reboot.
 
+For the cameras in V4L2 apps (optional, needs network; [details](payload/sp11-lcd/camera/README.md)):
+
+```bash
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt
+sudo bash /mnt/sp11-lcd/camera/setup-camera.sh       # from your own account, not a root shell
+sudo umount /mnt
+```
+
 ### The installed system follows the edge channel
 
 The edge ISO installs `omarchy-dev` and Omarchy's edge repositories, so `omarchy-update` brings
@@ -197,8 +209,11 @@ powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
 
 ## Known open issues
 
-- **Front camera:** not listed in Monologue, and grey and dark under libcamera's simple IPA
-  ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)).
+- **Cameras in V4L2 apps:** Monologue and the screen recording webcam overlay find no camera, since
+  both cameras work through libcamera and PipeWire only
+  ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)). The opt-in
+  [camera/setup-camera.sh](payload/sp11-lcd/camera/README.md) works around it. The picture is
+  still dim and slightly green under libcamera's simple IPA.
 - **Right speaker:** the second WSA884x amplifier faults during playback
   ([omarchy #18383](https://github.com/omacom/omarchy/issues/18383)).
 - **Flex Keyboard Bluetooth pairing and Slim Pen pairing** are untested upstream on the LCD model.
@@ -248,6 +263,7 @@ key, serial number or account data. `SHA256SUMS` lists every file.
 | `build/edge/hwids.py` | Reads a UKI's `.hwids` and computes which tree systemd-stub picks, with and without the panel's EDID |
 | `build/edge/Dockerfile` | Arch Linux ARM toolbox (omarchy-iso's build image) for the verification and the tests |
 | `payload/sp11-lcd/setup.sh`, `README.md` | Go onto the ISO; the post-install step |
+| `payload/sp11-lcd/camera/` | Go onto the ISO; the opt-in camera relay: `setup-camera.sh`, the `v4l2-relayd-sp11` PKGBUILD and patch, the user service, v4l2loopback options and a WirePlumber rule |
 | `tools/sp11-chid.ps1` | Computes this machine's systemd CHIDs on Windows and matches them against a hwids JSON |
 | `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | The container test |
 | `contrib/` | Upstream candidates |
@@ -265,7 +281,10 @@ any of them) in a privileged container and checks:
    partition with GRUB byte for byte, `grub.cfg`, every base file unchanged (with `-LcdOnlyUki`,
    every one but the live UKI), and the medium's own checksums (`omarchy-root.img.zst.sha256`,
    `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
-2. `/sp11-lcd` has the repository's `setup.sh` and `README.md` and a complete `windows/`.
+2. `/sp11-lcd` has every file of the repository's `payload/sp11-lcd/` (`setup.sh`, `README.md`,
+   `camera/`), `camera/setup-camera.sh` parses, and `windows/` is complete. `setup-camera.sh` needs
+   the network and a running session and is not run in the container; it was run on the Surface
+   (see [the camera README](payload/sp11-lcd/camera/README.md)).
 3. Default build: the live UKI is Omarchy's own and `build/edge/verify-edge-iso.sh` passes on the
    result. Fallback build: `uki-dtb.py check` passes, kernel, initrd, os-release and uname are
    byte-identical to Omarchy's, no `.cmdline` or `.dtbauto`, within 256 MiB.

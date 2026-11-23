@@ -51,13 +51,18 @@ DSP ve GPU firmware'i) artık edge kurulum programı ve paketleri tarafından ya
      üzerinde çalıştırır. Işık sensörü yapılandırması, upstream'in hâlâ Windows'tan
      (`DriverStore/.../surfacepro_snscfgcrd8380.inf_arm64_*`) okuduğu tek şey; tam disk kurulumu
      onu siler, BitLocker gizler.
+   - `camera/setup-camera.sh`, isteğe bağlı: iki kamerayı da yalnızca V4L2 kullanan uygulamalarda
+     (Monologue, Omarchy'nin ekran kaydındaki webcam overlay'i) talep üzerine çalışan v4l2loopback
+     aktarımlarıyla kullanılabilir yapar. Bkz.
+     [payload/sp11-lcd/camera/README.md](payload/sp11-lcd/camera/README.md) (İngilizce).
 2. **`-LcdOnlyUki`, varsayılan olarak kapalı:** Surface firmware'i panelin EDID'ini systemd-stub'a
    vermezse diye canlı UKI'yi yalnızca LCD tree'siyle yeniden kurar. Bkz.
    [Canlı oturum OLED tree'siyle açılırsa](#canlı-oturum-oled-treesiyle-açılırsa).
 3. **[contrib/](contrib/README.md):** upstream'e hâlâ gönderilmeye değer olanlar (İngilizce).
 
-Çekirdek, paketler ve kurulum programı Omarchy'nin kendisidir. Hiçbir şey yeniden derlenmez, başka
-bir yerden hiçbir şey kurulmaz.
+Çekirdek, paketler ve kurulum programı Omarchy'nin kendisidir. İsteğe bağlı kamera kurulumu dışında
+hiçbir şey yeniden derlenmez, başka bir yerden hiçbir şey kurulmaz: o, kurulan sistemde
+`v4l2-relayd-sp11`'i (AUR'daki `v4l2-relayd` ve bir yama) derler.
 
 ## Windows'u silmeden önce
 
@@ -169,6 +174,15 @@ bu durum için yazıldı (burada denenmedi): kendi kullanıcınızla
 `OMARCHY_PATH=/usr/share/omarchy bash /usr/share/omarchy/migrations/1794228778.sh` çalıştırın (sudo
 ister, Surface Pro 11 kurulumunu yeniden çalıştırır ve UKI'yi yeniden derler), sonra yeniden başlatın.
 
+Kameraları V4L2 uygulamalarında kullanmak için (isteğe bağlı, internet gerekir;
+[ayrıntılar](payload/sp11-lcd/camera/README.md)):
+
+```bash
+sudo mount -o ro /dev/disk/by-label/OMARCHY_* /mnt
+sudo bash /mnt/sp11-lcd/camera/setup-camera.sh       # root kabuğundan değil, kendi hesabınızdan
+sudo umount /mnt
+```
+
 ### Kurulan sistem edge kanalını izler
 
 Edge ISO'su `omarchy-dev`'i ve Omarchy'nin edge depolarını kurar; böylece `omarchy-update` Omarchy'nin,
@@ -201,8 +215,11 @@ powershell -ExecutionPolicy Bypass -File .\build-iso.ps1 -LcdOnlyUki
 
 ## Bilinen açık konular
 
-- **Ön kamera:** Monologue'da listelenmiyor, libcamera'nın simple IPA'sıyla gri ve karanlık
-  ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)).
+- **V4L2 uygulamalarında kameralar:** Monologue ve ekran kaydındaki webcam overlay'i kamera
+  bulamıyor, çünkü iki kamera da yalnızca libcamera ve PipeWire üzerinden çalışıyor
+  ([omarchy-pkgs #3105](https://github.com/omacom/omarchy-pkgs/issues/3105)). İsteğe bağlı
+  [camera/setup-camera.sh](payload/sp11-lcd/camera/README.md) bunu aşar. Görüntü, libcamera'nın
+  simple IPA'sıyla hâlâ loş ve hafif yeşil.
 - **Sağ hoparlör:** ikinci WSA884x amplifikatörü çalma sırasında hataya düşüyor
   ([omarchy #18383](https://github.com/omacom/omarchy/issues/18383)).
 - **Flex Keyboard Bluetooth eşleştirmesi ve Slim Pen eşleştirmesi** upstream'de LCD modelde test
@@ -253,6 +270,7 @@ anahtarı, seri numarası ya da hesap bilgisi yok. `SHA256SUMS` her dosyayı lis
 | `build/edge/hwids.py` | Bir UKI'nin `.hwids` bölümünü okur ve systemd-stub'ın panel EDID'iyle ve EDID'siz hangi tree'yi seçeceğini hesaplar |
 | `build/edge/Dockerfile` | Doğrulama ve testler için Arch Linux ARM araç kutusu (omarchy-iso'nun derleme imajı) |
 | `payload/sp11-lcd/setup.sh`, `README.md` | ISO'ya giderler; kurulum sonrası adım |
+| `payload/sp11-lcd/camera/` | ISO'ya gider; isteğe bağlı kamera aktarımı: `setup-camera.sh`, `v4l2-relayd-sp11` PKGBUILD'i ve yaması, kullanıcı servisi, v4l2loopback seçenekleri ve bir WirePlumber kuralı |
 | `tools/sp11-chid.ps1` | Bu makinenin systemd CHID'lerini Windows'ta hesaplar ve bir hwids JSON'uyla karşılaştırır |
 | `test/edge-test.ps1`, `test/edge-test.sh`, `test/dtb2fs.py` | Konteyner testi |
 | `contrib/` | Upstream adayları |
@@ -270,7 +288,10 @@ konteynerde bağlar ve şunları kontrol eder:
    GRUB'lu EFI boot bölümü bayt bayt, `grub.cfg`, tabanın her dosyası değişmeden (`-LcdOnlyUki` ile
    canlı UKI hariç hepsi) ve ortamın kendi sağlama toplamları (`omarchy-root.img.zst.sha256`,
    `airootfs.sha512`, `qcom-firmware/SHA256SUMS`).
-2. `/sp11-lcd`'de reponun `setup.sh` ve `README.md` dosyaları ve eksiksiz bir `windows/` var.
+2. `/sp11-lcd`'de reponun `payload/sp11-lcd/` altındaki her dosyası (`setup.sh`, `README.md`,
+   `camera/`) var, `camera/setup-camera.sh` sözdizimi geçerli ve `windows/` eksiksiz.
+   `setup-camera.sh` internet ve açık bir oturum ister, konteynerde çalıştırılmaz; Surface üzerinde
+   çalıştırıldı (bkz. [kamera README'si](payload/sp11-lcd/camera/README.md)).
 3. Varsayılan yapı: canlı UKI Omarchy'nin kendisi ve `build/edge/verify-edge-iso.sh` çıktı üzerinde
    geçiyor. Yedek yapı: `uki-dtb.py check` geçiyor; çekirdek, initrd, os-release ve uname Omarchy'ninkiyle
    bayt bayt aynı; `.cmdline` ya da `.dtbauto` yok; 256 MiB içinde.

@@ -1,0 +1,19 @@
+Stamp frames in CLOCK_MONOTONIC time.
+
+V4L2 capture buffers are expected to carry CLOCK_MONOTONIC timestamps. With
+base time set to "now", buffers written to v4l2loopback carry pipeline running
+time (seconds since the relay started), and consumers such as ffmpeg/ffplay
+convert those into large negative timestamps. A zero base time makes running
+time equal to the monotonic system clock.
+
+--- a/src/v4l2-relayd.c
++++ b/src/v4l2-relayd.c
+@@ -426,7 +426,7 @@ output_pipeline_create ()
+ 
+   clock = gst_system_clock_obtain ();
+   gst_pipeline_use_clock (GST_PIPELINE (pipeline), clock);
+-  gst_element_set_base_time (pipeline, gst_clock_get_time (clock));
++  gst_element_set_base_time (pipeline, 0);
+   gst_element_set_start_time (pipeline, GST_CLOCK_TIME_NONE);
+   gst_object_unref (clock);
+ 

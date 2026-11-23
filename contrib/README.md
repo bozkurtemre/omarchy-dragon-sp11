@@ -49,3 +49,26 @@ the file it loaded): the support package's README says to drop its board data "o
 carries a Surface Pro 11 entry". Whether the new record is Surface calibration or another reference
 board is not known; this machine's own Windows board files (`bdwlan*` in `qcwlanhmt8380`) are in the
 USB's driver archive for that comparison.
+
+## 3. omarchy-pkgs #3105: the camera relay for V4L2-only apps
+
+[payload/sp11-lcd/camera/](../payload/sp11-lcd/camera/README.md) is the relay #3105 suggests,
+run on this LCD unit, and could move into `microsoft-surface-pro-11-support` as it stands: the
+v4l2loopback options, the `surface-camera@.service` user unit with its two camera files, and the
+WirePlumber rule. Three findings belong in that issue (or in the Surface Laptop 7 relay,
+omarchy-pkgs #3244), because each one broke V4L2 capture through the relay:
+
+- **v4l2-relayd's base time.** The output pipeline's base time is the clock time at start, so
+  frames reach v4l2loopback stamped with seconds since the relay started, not `CLOCK_MONOTONIC`.
+  ffmpeg turns them into large negative timestamps, and the first app after a relay start got
+  nothing. [monotonic-timestamps.patch](../payload/sp11-lcd/camera/v4l2-relayd-sp11/monotonic-timestamps.patch)
+  sets base time 0; it is a one-line upstream candidate for
+  [vicamo/v4l2-relayd](https://gitlab.com/vicamo/v4l2-relayd) too.
+- **libcamera's sensor timestamps.** With `pipewiresrc` as it is, `v4l2sink` drops almost every
+  frame as late. `pipewiresrc do-timestamp=true` and `v4l2sink sync=false` fix it.
+- **Stale frames and memory.** Each open began with a burst of stale duplicates, and the relay grew
+  to 1.1 GB while no app read. `videorate skip-to-first=true` and
+  `appsrc max-buffers=2 leaky-type=downstream` fix both.
+
+Before opening: try Monologue and `omarchy-capture-screenrecording --with-webcam` on screen. So far
+only ffmpeg has read the devices.

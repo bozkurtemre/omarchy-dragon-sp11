@@ -39,7 +39,7 @@ step() { echo; echo "==> $*"; }
 [[ -f $iso ]] || die "$iso not found"
 [[ -f $payload/setup.sh && -f $payload/windows/SHA256SUMS ]] || die "$payload is not staged (run build-iso.ps1)"
 # Our own files must have LF endings; the driver archive is Windows' own and stays as it is.
-if grep -lI $'\r' "$payload"/*.sh "$payload"/*.md; then
+if grep -rlI --exclude-dir=windows $'\r' "$payload"; then
   die "the files above have Windows line endings; bash would fail on them"
 fi
 rm -rf "$work" && mkdir -p "$work" && cd "$work"

@@ -1,0 +1,44 @@
+# v4l2-relayd for the Surface Pro 11 camera relay (../setup-camera.sh).
+#
+# The AUR's v4l2-relayd 0.2.0, plus monotonic-timestamps.patch, built for
+# aarch64. A package of its own name, so an AUR helper never swaps it for the
+# unpatched AUR build.
+
+pkgname=v4l2-relayd-sp11
+_name=v4l2-relayd
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Plays GStreamer sources into v4l2loopback devices (patched for the Surface Pro 11 camera relay)"
+arch=('aarch64' 'x86_64')
+url="https://gitlab.com/vicamo/v4l2-relayd"
+license=('GPL-2.0-or-later')
+depends=('glib2' 'gstreamer' 'gst-plugins-base-libs' 'gst-plugins-good' 'v4l2loopback-dkms')
+makedepends=('autoconf' 'automake')
+provides=("$_name=$pkgver")
+conflicts=("$_name")
+source=("https://gitlab.com/vicamo/v4l2-relayd/-/archive/upstream/${pkgver}/${_name}-upstream-${pkgver}.tar.gz"
+        "monotonic-timestamps.patch")
+sha256sums=('0c063edf18dcc6edcdef46e695128cfc2b2d60964ea8538c7e79a2454310c53d'
+            '68b6f6e7e1d742cace04129dab16c0ae64498769e18c89174815640fc5202d0a')
+
+prepare() {
+	cd "$srcdir/${_name}-upstream-${pkgver}"
+	patch -Np1 -i "$srcdir/monotonic-timestamps.patch"
+}
+
+build() {
+	cd "$srcdir/${_name}-upstream-${pkgver}"
+	./autogen.sh
+	./configure --prefix=/usr --sysconfdir=/etc
+	make
+}
+
+package() {
+	cd "$srcdir/${_name}-upstream-${pkgver}"
+	make DESTDIR="$pkgdir/" install
+
+	# Upstream's v4l2loopback options and system relay units are for one
+	# "Virtual Camera"; setup-camera.sh configures the module itself and runs
+	# the relay as a user service.
+	rm -r "$pkgdir/etc" "$pkgdir/usr/lib/modules-load.d" "$pkgdir/usr/lib/systemd"
+}

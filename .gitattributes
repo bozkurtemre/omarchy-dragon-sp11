@@ -4,4 +4,5 @@
 *.py text eol=lf
 *.json text eol=lf
 payload/sp11-lcd/README.md text eol=lf
+payload/sp11-lcd/camera/** text eol=lf
 Dockerfile text eol=lf

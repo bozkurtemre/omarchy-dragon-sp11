@@ -10,8 +10,8 @@
 #  1. The result boots like the base: volume UUID and dates, El Torito and GPT,
 #     grub.cfg, every file of the base unchanged (with the fallback, all but
 #     the live UKI), and the medium's own checksums pass.
-#  2. /sp11-lcd: setup.sh and README.md from payload/, and windows/ complete
-#     against its own SHA256SUMS.
+#  2. /sp11-lcd: every file of payload/ (setup.sh, README.md, camera/), and
+#     windows/ complete against its own SHA256SUMS.
 #  3. The live UKI: Omarchy's own, with build/edge/verify-edge-iso.sh passing
 #     on the result; or with the fallback, the LCD-only rebuild.
 #  4. setup.sh, run twice from the mounted result inside the edge target root
@@ -87,9 +87,10 @@ have=$(diff -rq "$mnt/base" "$mnt/out" 2>&1 | grep -vxF "Files $mnt/base$cat_pat
 (cd "$mnt/out/arch/aarch64/qcom-firmware" && sha256sum --quiet -c SHA256SUMS) && ok "qcom-firmware/SHA256SUMS passes on the result" || bad "medium firmware checksums"
 
 step "2. /sp11-lcd"
-for f in setup.sh README.md; do
+while IFS= read -r f; do
   cmp -s "$repo/payload/sp11-lcd/$f" "$mnt/out/sp11-lcd/$f" && ok "/sp11-lcd/$f is payload/sp11-lcd/$f" || bad "/sp11-lcd/$f differs from the repository"
-done
+done < <(cd "$repo/payload/sp11-lcd" && find . -type f -printf '%P\n' | sort)
+bash -n "$mnt/out/sp11-lcd/camera/setup-camera.sh" && ok "camera/setup-camera.sh parses" || bad "camera/setup-camera.sh does not parse"
 win=$mnt/out/sp11-lcd/windows
 (cd "$win" && sha256sum --quiet -c SHA256SUMS) && ok "windows/: $(wc -l <"$win/SHA256SUMS") files match SHA256SUMS" || bad "windows/ does not match SHA256SUMS"
 [[ $(find "$win" -type f ! -name SHA256SUMS | wc -l) == $(wc -l <"$win/SHA256SUMS") ]] && ok "SHA256SUMS lists every file under windows/" || bad "files under windows/ that SHA256SUMS does not list"
